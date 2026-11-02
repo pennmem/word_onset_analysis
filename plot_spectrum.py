@@ -72,15 +72,14 @@ def t_label() -> str:
     return f"t ({c['delta_label']})"
 
 
-def heatmap(M: np.ndarray, q: np.ndarray, labels: list, stem: str, figsize: tuple,
-            lobes: list, gaps: bool = False) -> None:
-    """t map with outlined q < .05 cells; labels coloured by `lobes` (one per row);
-    gaps: white lines between lobes."""
-    v = float(np.nanmax(np.abs(M))) or 1.0
-    fig, ax = plt.subplots(figsize=figsize)
+def draw(ax, M: np.ndarray, q: np.ndarray, labels: list, lobes: list, xlabels: list,
+         gaps: bool = False, v: float | None = None):
+    """t map (symmetric scale, +/- v or max |t|) with outlined q < .05 cells; row labels
+    coloured by `lobes`; gaps: white lines between lobes. Returns the image."""
+    v = v or float(np.nanmax(np.abs(M))) or 1.0
     im = ax.imshow(M, cmap="RdBu_r", vmin=-v, vmax=v, aspect="auto")
     outline(ax, q < 0.05)
-    ax.set_xticks(range(len(CENTRES)), [f"{x:.0f}" for x in CENTRES], fontsize=13)
+    ax.set_xticks(range(len(xlabels)), xlabels, fontsize=13)
     ax.set_yticks(range(len(labels)), labels, fontsize=13 if not gaps else 11)
     for lab, lb in zip(ax.get_yticklabels(), lobes):
         lab.set_color(fc.LOBE_COLORS[lb])
@@ -88,6 +87,14 @@ def heatmap(M: np.ndarray, q: np.ndarray, labels: list, stem: str, figsize: tupl
     lobes = np.array(lobes)
     for i in np.flatnonzero(lobes[1:] != lobes[:-1]) if gaps else []:
         ax.axhline(i + 0.5, color="white", lw=3)
+    return im
+
+
+def heatmap(M: np.ndarray, q: np.ndarray, labels: list, stem: str, figsize: tuple,
+            lobes: list, gaps: bool = False) -> None:
+    """ROI x frequency t map (draw), saved to <stem>.png/.pdf."""
+    fig, ax = plt.subplots(figsize=figsize)
+    im = draw(ax, M, q, labels, lobes, [f"{x:.0f}" for x in CENTRES], gaps)
     ax.set_xlabel("Frequency (Hz)", fontsize=14)
     fig.colorbar(im, ax=ax).set_label(t_label(), fontsize=14)
     fig.tight_layout()

@@ -8,12 +8,13 @@ Reads compute.py's high-gamma power pickles (per-trial sub-band Hilbert envelope
   latency     trial-mean envelope minus its word-off mean, smoothed (30 ms); the
               first time it reaches half its peak within 0-800 ms (half-maximum)
 
+Regions: anatomical labels within the Burke ROIs, hemispheres pooled (--rois: the 12 ROIs).
 Sessions are averaged per electrode, each subject contributes its median latency
 per region, and regions are compared by the across-subject mean +/- 95% CI (regions
 with >= MIN_SUBJECTS_ROI subjects). Figure: regions ordered by latency (bars), and each
 region's group-mean response over time (curves, each scaled to its peak).
 
-    python plot_latency.py [--simulation-tag TAG]
+    python plot_latency.py [--rois] [--simulation-tag TAG]
 """
 from __future__ import annotations
 
@@ -81,8 +82,7 @@ def electrode_rows(p: dict, lobe_of: dict) -> list[tuple]:
 
 def main() -> None:
     args, save_root = fc.plot_args(__doc__, join("figures", "latency"), **{
-        "--fine": dict(action="store_true", help="anatomical labels within the Burke ROIs instead of the 12 ROIs"),
-        "--pool-hemispheres": dict(action="store_true", help="with --fine: pool left and right")})
+        "--rois": dict(action="store_true", help="the 12 Burke ROIs instead of anatomical regions (hemispheres pooled)")})
     lobe_of = fc.load_burke_maps()
     os.makedirs(args.out_dir, exist_ok=True)
     rows, times = [], None
@@ -94,8 +94,8 @@ def main() -> None:
         if times is None:
             times = p["env_hi_t0_ms"] + p["env_step_ms"] * (np.arange(np.shape(p["env_hi"])[-1]) + 0.5)
         rows += electrode_rows(p, lobe_of)
-    # region: the Burke ROI, or (--fine) the anatomical label, optionally without hemisphere
-    region = [(r[5].split(" ", 1)[1] if args.pool_hemispheres else r[5]) if args.fine else r[2] for r in rows]
+    # region: the anatomical label without hemisphere (default), or (--rois) the Burke ROI
+    region = [r[2] if args.rois else r[5].split(" ", 1)[1] for r in rows]
     lobe = {g: r[2].split("-", 1)[1] for g, r in zip(region, rows)}   # region -> Burke lobe (colour)
     el = pd.DataFrame([(r[0], r[1], g, r[3]) for r, g in zip(rows, region)],
                       columns=["sub", "label", "roi", "latency_ms"])
@@ -116,7 +116,7 @@ def main() -> None:
                    "mean_ms": m, "ci95_ms": ci, "sem_ms": float(g["latency_ms"].std(ddof=1) / np.sqrt(len(g))),
                    "median_ms": float(g["latency_ms"].median())})
     st = pd.DataFrame(st).sort_values("mean_ms")
-    stem = join(args.out_dir, "hg_latency_word_on" + ("_fine" if args.fine else "") + ("_pooled" if args.pool_hemispheres else ""))
+    stem = join(args.out_dir, "hg_latency_word_on" + ("" if args.rois else "_fine_pooled"))
     st.to_csv(fc.table_path(f"{stem}_stats.csv"), index=False)
     tbl.to_csv(fc.table_path(f"{stem}_per_subject.csv"), index=False)
     print(st.round(1).to_string(index=False))

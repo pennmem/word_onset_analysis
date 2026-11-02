@@ -7,6 +7,124 @@ earlier than the last entry below is undocumented.
 
 ---
 
+## 2026-11-01 — simulations cut + rerun; decoder permutations; replicability intervals
+
+- Simulator: pink noise generated at a fixed length (8192 samples) and cropped. FFT
+  noise is periodic over its length, so per-clip generation gave the longer word-on
+  clip (2.0 s vs 1.6 s word off) more low-frequency power: +0.13% at 6 Hz, falling
+  to +0.01% at 70 Hz (exact calculation). That was the slight positive 6-8 Hz lean
+  in the full-cohort nulls. Real data are unaffected (both clips are cut from one
+  recording, and the spectrum uses equal 600 ms crops).
+- Simulation set cut from 31 tags to 6 + 3 sweeps:
+  - Nulls, full cohort: `hg_null` (no coupling), `sync_equal` (equal coupling before
+    and after onset).
+  - New `ceiling`: alpha phase coupling (PPC 0.99), a shared high-gamma envelope
+    (depth 2) and a 4x high-gamma gain on later-recalled words only, frontal,
+    200-600 ms, near noise-free.
+  - Controls, first 30 subjects: `leak_frontal`, `hg_latency`, `hg_recall_frontal`;
+    sweeps `rec_power`, `rec_ciplv`, `rec_aec_c` (4 levels each).
+  - Removed: `hg_power_frontal`, `alpha_lag_frontal`, `hg_env_frontal`,
+    `alpha_lag_epoch`, `hg_env_epoch` (merged into ceiling), `hg_null_line`,
+    `rec_power_clean`. All simulation outputs (51 GB) were deleted.
+  - Runner: `logs/run_sims_2026-11-01.sh`.
+- plot_anticipation: no wait-times figure for simulations (wait times come from the
+  events, so they are identical in every simulation).
+- plot_decoding:
+  - Permutations 20 -> 2000 per subject, all label sets fit at once (`fit_predict`:
+    the same L2 logistic regression; AUCs within 4e-4 of sklearn's, whose
+    convergence tolerance is looser).
+  - Per subject: chance level (mean of the permutation AUCs, ~0.49 because held-out
+    AUC is biased low) and p.
+  - Group test: AUC minus the subject's chance level (paired, one-sided), not AUC
+    vs 0.5. The dashed line is the chance level.
+  - Fix: `scipy.special` referenced through the module (joblib workers couldn't
+    unpickle `expit`).
+- plot_reliability, network replicability:
+  - Estimate: median r over 1000 disjoint subject splits (unchanged).
+  - Interval: each split's halves also bootstrapped (subjects resampled with
+    replacement, within each half). Bootstrapped r runs low (occipital alpha 0.83 vs
+    0.90), so the distribution is shifted to the split median. Box plots show it;
+    whiskers are the 95% interval.
+  - Real data: occipital 0.90 [0.64, 0.99] alpha, 0.81 [0.46, 0.98] high gamma.
+    Alpha parietal and limbic just exclude 0; every other interval includes 0.
+- plot_epoch_network:
+  - Hubs are absolute again, as Rao et al. 2025: a region's mean change over its
+    connections, t vs 0. Holm over regions x epochs replaces BH/BKY, because each
+    hub x epoch is reported on its own.
+  - BKY had marked more alpha cells than having no correction at all (69 vs 65);
+    BH marked 53 of 108 (most of the map, since all of it rises); Holm marks 18.
+  - Real data: alpha hubs move from occipital (0-400 ms) to limbic/temporal,
+    parietal (300-700), left frontal and left temporal (400-1000); 4 fine-level
+    hubs; high gamma has one (left occipital, 0-200 ms).
+  - The "region minus rest of network" hub is supplement only
+    (`_hubs_relative.csv`, ROI x epoch t heatmap `_relative.png`, Holm; 12 ROIs).
+    9 alpha cells: occipital above the network, temporal and left hippocampus below.
+  - plot_spectrum: `heatmap` split into `draw` (one axis, reused) + saving.
+  - Paper: methods, statistics, Fig. 4 caption and results rewritten; new
+    Supplementary Fig. `fig:hubs-relative`. figS4_recovery dropped from
+    sync_figures (no simulation validation in the paper).
+- plot_latency: the default regions are anatomical labels within the Burke ROIs,
+  hemispheres pooled (the paper's Fig. 3, `hg_latency_word_on_fine_pooled`).
+  `--fine` and `--pool-hemispheres` were replaced by `--rois` (the 12 ROIs, unused
+  by the paper; dropped from sync_figures).
+- Case studies removed: plot_case_studies.py, its pipeline entries and all
+  `power_spectrum_word_on_occipital*` outputs. build_roi_power.py (longetal)
+  writes its own file of the same name and was left alone.
+
+## 2026-10-30/31 — Figure 2/3 rework; simulation null fixes
+
+- plot_spectrum, as DeHaan et al. 2025 (11 bins kept):
+  - Colour is t across subjects per ROI x frequency cell; BH-FDR over all cells;
+    outlines around connected significant cells (no cluster statistic; TFCE
+    removed).
+  - The 12-ROI map is Fig. 2B; the subregion map (`_fine`) is in the supplement.
+- Figure labels use "Δ word" (`delta_label`) for word on vs off; larger fonts in
+  the ROI bars and the latency figure.
+- plot_mixed: the latency mixed model is a lower-triangle heatmap of pairwise lobe
+  differences (Holm), now a supplementary figure; Fig. 3B was dropped.
+- Simulator:
+  - A tag can list several processes, and their signals add up.
+  - `hg_envelope` `equal_conditions`: the envelope is shared on pre events too.
+  - New null `sync_equal`.
+  - Fix: the shared envelope is now scaled by a fixed factor, not each clip's own
+    SD. Per-clip scaling weakened it in the longer word-on clip, which biased AEC-c
+    low (11/12 ROIs in `sync_equal`).
+- run_streamed.sh: `SIM_TAGS` / `SIM_PLOT_TAGS` stream simulation tags.
+  - Fix: `--simulation-tag` is built as an array, because zsh doesn't word-split.
+    The 10-30 run had failed in all 44 batches.
+  - Sweeps run inside the stream, because drop_raw had deleted their EEG.
+
+## 2026-10-29 — hub measure, network replicability, study figure
+
+- Epoch-network hub: a region's mean change over its connections minus the mean
+  over all other regions x epochs.
+- plot_reliability: network replicability per lobe across subjects (disjoint
+  halves, 1000 splits).
+- New plot_study_figure.py: electrode coverage and an example high-gamma response
+  (Fig. 1B/C).
+
+## 2026-10-23 — spectrum to 150 Hz; simulator pink-noise scaling
+
+- compute.py VERSION single_pass_8: spectrum bins 5-150 Hz (11 log bins, mains
+  +/- 2 Hz left out), plus native-resolution trial-mean spectra.
+- Simulator: pink noise scaled so its spectrum doesn't depend on clip length.
+  Normalising each clip's total variance had produced a broadband word-on decrease
+  in the null. Only 3 tags were rerun then; all tags were rerun 2026-10-31/11-01.
+
+## 2026-10-13 to 10-22 — decoder, reliability, mixed models, label recovery
+
+- plot_decoding: recall decoder (L2 logistic regression, ram_utils C,
+  leave-one-session-out), per lobe and 100 ms window, 0-1000 ms.
+- plot_reliability: test-retest (session halves) of power d and synchrony hub
+  strength, as riley-thesis.
+- mixed_models.R + plot_mixed.py:
+  - Latency: `latency ~ lobe + (1|sub) + (1|sub:lobe) + (1|sub:region)`.
+  - Bands: lobe x band interaction (Holm).
+- Tables go to results/ (`fc.table_path`), figures to figures/.
+- recover_labels.py (copied from Riley's cml_anatomy_standalone): recovers pair
+  labels the DB dropped.
+- compute.py single_pass_7: per-trial spectrum bins.
+
 ## 2026-10-12 — PAC removed (PI decision)
 
 Theta-gamma PAC (compute.py, plot_boxplots, plot_epoch_network, fc.compute_pac,
