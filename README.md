@@ -89,7 +89,6 @@ compute.py                  per session, one load: alpha + spectrum power (multi
                             power (Hilbert sub-bands, + per-trial envelopes), alpha ciPLV, high-gamma AEC-c
 plot_boxplots.py            power + synchrony per ROI (subject and mean +/- CI versions)
 plot_spectrum.py            t per ROI x frequency bin
-plot_case_studies.py        t vs frequency for chosen regions (--regions)
 plot_timecourse.py          high-gamma d per 50 ms bin per ROI
 plot_epoch_network.py       200 ms epoch synchrony network (hubs + edges)
 plot_latency.py             high-gamma half-max latency / order of activation

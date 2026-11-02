@@ -12,23 +12,6 @@ hg_null:
   target_lobes: [frontal]
   pinknoise_amplitude: 10
   pinknoise_exponent: 1
-hg_null_line:          # hg_null + 60 Hz mains (tests notch ringing at the clip edges)
-  data_generating_process: hg_power
-  band: [70, 150]
-  hg_amplitude: 10
-  hg_gain: 1
-  target_lobes: [frontal]
-  pinknoise_amplitude: 10
-  pinknoise_exponent: 1
-  line_amplitude: 20
-hg_power_frontal:
-  data_generating_process: hg_power
-  band: [70, 150]
-  hg_amplitude: 10
-  hg_gain: 2
-  target_lobes: [frontal]
-  pinknoise_amplitude: 10
-  pinknoise_exponent: 1
 hg_latency:            # latency order: high-gamma gain starts at a known time per lobe
   data_generating_process: hg_power
   band: [70, 150]
@@ -48,49 +31,7 @@ hg_recall_frontal:     # recall decoder: high-gamma gain on later-recalled words
   active_ms: [400, 700]
   pinknoise_amplitude: 10
   pinknoise_exponent: 1
-# Synchrony checks for ciPLV (alpha) and AEC-c (high gamma); see simulate_eeg.py.
-alpha_lag_frontal:     # 10 Hz, frontal pairs coupled after onset, half of them lagged pi/2
-  data_generating_process: osc_lag
-  target_lobes: [frontal]
-  global_ppc: 0.01
-  target_ppc0: 0.01
-  target_ppc1: 0.5
-  phase_lag: 1.5708
-  oscillation_frequency: 10
-  osc_amplitude: 20
-  pinknoise_amplitude: 10
-  pinknoise_exponent: 1
-hg_env_frontal:        # 70-110 Hz carriers, shared < 4 Hz envelope among frontal channels after onset
-  data_generating_process: hg_envelope
-  target_lobes: [frontal]
-  band: [70, 110]
-  env_hz: 4
-  env_depth: 0.5
-  hg_amplitude: 10
-  pinknoise_amplitude: 10
-  pinknoise_exponent: 1
-alpha_lag_epoch:       # as alpha_lag_frontal, coupled only 400-800 ms (epoch network timing)
-  data_generating_process: osc_lag
-  target_lobes: [frontal]
-  global_ppc: 0.01
-  target_ppc0: 0.01
-  target_ppc1: 0.5
-  phase_lag: 1.5708
-  oscillation_frequency: 10
-  osc_amplitude: 20
-  pinknoise_amplitude: 10
-  pinknoise_exponent: 1
-  active_ms: [400, 800]
-hg_env_epoch:          # as hg_env_frontal, shared envelope only 400-800 ms
-  data_generating_process: hg_envelope
-  target_lobes: [frontal]
-  band: [70, 110]
-  env_hz: 4
-  env_depth: 0.5
-  hg_amplitude: 10
-  pinknoise_amplitude: 10
-  pinknoise_exponent: 1
-  active_ms: [400, 800]
+# Volume conduction: ciPLV and AEC-c should not respond.
 leak_frontal:          # zero-lag common source on frontal channels after onset
   data_generating_process: leak
   target_lobes: [frontal]
@@ -115,26 +56,43 @@ sync_equal:            # null 2 (Riley): alpha phase coupling + shared high-gamm
   pinknoise_amplitude: 10
   pinknoise_exponent: 1
 
+ceiling:               # every effect at once, strong, near-noise-free, frontal only, 200-600 ms:
+  # ciPLV/AEC-c/power/decoder AUC/reliability at their maximum in frontal, 0 elsewhere; epoch
+  # network and decoder only in the 200-600 ms epochs (timing)
+  data_generating_process: [osc_lag, hg_envelope, hg_power]
+  target_lobes: [frontal]
+  active_ms: [200, 600]
+  global_ppc: 0.01
+  target_ppc0: 0.01
+  target_ppc1: 0.99
+  phase_lag: 1.5708
+  oscillation_frequency: 10
+  osc_amplitude: 20
+  band: [70, 110]
+  env_hz: 4
+  env_depth: 2
+  hg_amplitude: 10
+  hg_gain: 4
+  recalled_only: true    # high-gamma gain on later-recalled words only (decoder AUC -> 1)
+  pinknoise_amplitude: 1
+  pinknoise_exponent: 1
+
 # Recovery sweeps (-> <figures>/simulations/recovery.png): each value becomes its
 # own tag `<sweep>_<value>` with every key in `keys` set to that value.
 sweeps:
-  rec_power_noisy:     # amplitude gain after onset -> planted 20*log10(gain) dB
+  rec_power:           # amplitude gain after onset -> planted 20*log10(gain) dB
     keys: [hg_gain]
-    values: [1, 1.25, 1.5, 2, 4]
-    params: &rec_power
+    values: [1, 1.5, 2, 4]
+    params:
       data_generating_process: hg_power
       band: [70, 150]
       hg_amplitude: 10
       target_lobes: [frontal]
       pinknoise_amplitude: 10
       pinknoise_exponent: 1
-  rec_power_clean:
-    keys: [hg_gain]
-    values: [1, 1.25, 1.5, 2, 4]
-    params: {<<: *rec_power, pinknoise_amplitude: 0}
   rec_ciplv:           # post-onset phase consistency among frontal pairs (half lagged pi/2)
     keys: [target_ppc1]
-    values: [0.01, 0.1, 0.25, 0.5, 0.75]
+    values: [0.01, 0.25, 0.5, 0.75]
     params:
       data_generating_process: osc_lag
       target_lobes: [frontal]
@@ -147,7 +105,7 @@ sweeps:
       pinknoise_exponent: 1
   rec_aec_c:           # depth of the shared post-onset envelope among frontal channels
     keys: [env_depth]
-    values: [0, 0.25, 0.5, 1, 2]
+    values: [0, 0.5, 1, 2]
     params:
       data_generating_process: hg_envelope
       target_lobes: [frontal]

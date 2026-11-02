@@ -25,7 +25,7 @@ FIG = "figures" + (".longetal" if LONG else "") + (".smokescreen" if SMOKE else 
 DONE = f"{FIG.replace('figures', 'results', 1)}/.done"   # run markers: figures/ holds figures only
 SWEEP_TAGS = [t for tags in SWEEPS.values() for t in tags]   # recovery sweeps: compute only
 # plot script -> its figure subdirectory ("" = the script writes its own subdirectories)
-PLOTS = {"plot_boxplots": "", "plot_spectrum": "burke_roi_power", "plot_case_studies": "burke_roi_power",
+PLOTS = {"plot_boxplots": "", "plot_spectrum": "burke_roi_power",
          "plot_timecourse": "burke_roi_power", "plot_epoch_network": "burke_roi_synchrony",
          "plot_latency": "latency", "plot_anticipation": "latency",
          "plot_decoding": "decoding", "plot_reliability": "reliability"}

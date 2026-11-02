@@ -2,8 +2,7 @@
 
 Centerpiece of the project. Loads per-session EEG + pairs, runs each FC
 metric, regionalizes to (region × region) matrices, aggregates across
-subjects, computes hub scores, bootstrap-evaluated subsample similarity,
-and case-study contrast tests.
+subjects, computes hub scores and bootstrap-evaluated subsample similarity.
 
 Dominated by pandas + mne_connectivity + matplotlib pyplot method chains
 — all weakly stubbed. File-level narrowing for the library-stub-noise

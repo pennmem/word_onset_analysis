@@ -10,7 +10,6 @@ typeset -A F=(
   fig3_timecourse            burke_roi_power/power_timecourse_word_on_high_gamma.png
   fig4a_latency              latency/hg_latency_word_on.png
   fig4b_latency_fine         latency/hg_latency_word_on_fine_pooled.png
-  fig4c_latency_mixed        latency/hg_latency_word_on_mixed.png
   fig5_synchrony             burke_roi_synchrony/roi_synchrony_word_on_sem.png
   fig6a_epochs               burke_roi_synchrony/roi_synchrony_epochs_word_on.png
   fig6c_epochs_alpha         burke_roi_synchrony/roi_synchrony_epochs_word_on_alpha.png
@@ -22,6 +21,7 @@ typeset -A F=(
   figS1_power_subjects       burke_roi_power/roi_power_word_on.png
   figS2_synchrony_subjects   burke_roi_synchrony/roi_synchrony_word_on.png
   figS3_spectrum_fine         burke_roi_power/power_spectrum_word_on_fine.png
+  figS5_latency_mixed        latency/hg_latency_word_on_mixed.png
   figS4_recovery             simulations/recovery.png
 )
 for k v in ${(kv)F}; do [[ -f figures/$v ]] && cp figures/$v paper/img/$k.png || echo "[missing] figures/$v"; done

@@ -7,6 +7,7 @@
 #   caffeinate -is zsh run_streamed.sh [batch_size]
 # SIM_TAGS="hg_null sync_equal": the same per simulation tag instead of the real data
 # (full cohort, as the real analyses); figures/results -> */simulations/<tag>/.
+# SIM_PLOT_TAGS: plot only these tags (default: all SIM_TAGS; e.g. sweeps are compute only).
 cd "${0:A:h}"
 PY=~/.venvs/phase_viz/bin/python; B=${1:-10}
 ROOT=$($PY -c "from project_paths import SCRATCH_DIR; print(SCRATCH_DIR)" 2>/dev/null | tail -1)
@@ -26,14 +27,15 @@ for ((i = 1; i <= ${#SUBS}; i += B)); do
   echo "[stream] $(date +%H:%M) batch $(( (i - 1) / B + 1 )): $batch"
   retry $PY prepare_sessions.py --subjects $batch --workers 3 || continue   # downloads this batch
   for t in ${=SIM_TAGS:-real}; do   # single pass; earlier batches are cached
-    CML_DATA_SOURCE=local $PY compute.py --workers 3 ${SIM_TAGS:+--simulation-tag $t}
+    S=(); [[ $t != real ]] && S=(--simulation-tag $t)   # array: zsh does not word-split
+    CML_DATA_SOURCE=local $PY compute.py --workers 3 $S
   done
   drop_raw; echo "$batch" >> $DONE
 done
-for t in ${=SIM_TAGS:-real}; do
+for t in ${=SIM_PLOT_TAGS:-${SIM_TAGS:-real}}; do
   F=figures; R=results; S=()
   [[ $t != real ]] && F=figures/simulations/$t && R=results/simulations/$t && S=(--simulation-tag $t)
-  for s d in plot_boxplots . plot_spectrum burke_roi_power plot_case_studies burke_roi_power \
+  for s d in plot_boxplots . plot_spectrum burke_roi_power \
              plot_timecourse burke_roi_power plot_epoch_network burke_roi_synchrony plot_latency latency \
              plot_anticipation latency plot_decoding decoding plot_reliability reliability; do
     CML_DATA_SOURCE=local $PY $s.py $S --out-dir $F/$d   # figures from the cache

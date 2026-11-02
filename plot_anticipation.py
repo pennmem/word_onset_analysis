@@ -61,6 +61,8 @@ def main() -> None:
     fc.roi_figure([("High-gamma response peak\nlong − short wait", lambda ax: fc.roi_bar_panel(ax, st))],
                   args.out_dir, f"hg_anticipation_{BEH}")
 
+    if getattr(args, "simulation_tag", None):   # wait times come from the events: the same in every simulation
+        return
     # wait (blank) durations, all words; trials are split at each session's own median
     w = np.concatenate(waits)
     fig, ax = plt.subplots(figsize=(6, 3.8))

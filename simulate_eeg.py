@@ -67,12 +67,15 @@ for _tag, _p in simulation_parameters.items():
         SWEEPS.setdefault(_p["sweep"], []).append(_tag)
 
 
-def generate_pink_noise(n: int, amplitude: float, exponent: float, n_ref: int = 1000) -> NDArrayAny:
+def generate_pink_noise(n: int, amplitude: float, exponent: float, n_ref: int = 1000,
+                        n_gen: int = 8192) -> NDArrayAny:
     """1/f^exponent noise of length n (global np.random state). Scaled so its spectrum is the
     same for any n (amplitude = total std at n_ref samples): normalising each clip to a fixed
     total variance instead moved power out of the analysed band in longer clips (the word-on
-    clip is longer than the word-off clip: a broadband word-on decrease in the null)."""
-    m = n + (n % 2)
+    clip is longer than the word-off clip: a broadband word-on decrease in the null).
+    Generated at a fixed length n_gen (>= every clip) and cropped: FFT noise is periodic over
+    its length, so per-clip lengths gave the longer clip more low-frequency power (+0.13% at 6 Hz)."""
+    m = max(n_gen, n + (n % 2))
     scales = np.linspace(0, 0.5, m // 2 + 1)[1:] ** (-exponent / 2)
     f = np.concatenate([[0], np.random.normal(scale=scales) * np.exp(2j * np.pi * np.random.random(m // 2))])
     ref = np.linspace(0, 0.5, n_ref // 2 + 1)[1:] ** (-exponent / 2)
@@ -159,7 +162,8 @@ def replace_w_simulated_EEG(eeg: TimeSeries, dfrow: pd.Series, condition_mask: N
             mask = np.ones(eeg.shape[0], bool) if p.get("equal_conditions") else np.asarray(condition_mask, bool)
             own = env[np.ix_(mask, target)]
             env[np.ix_(mask, target)] = np.where(win, own[:, :1], own)   # first target channel's envelope, shared
-            env /= env.std(axis=-1, keepdims=True)
+            env /= np.sqrt(2 * p["env_hz"] / sf)   # ~unit variance; a fixed scale, not the clip's own SD
+            # (per-clip scaling made the longer word-on clip's envelope weaker -> AEC-c biased low)
             data += p["hg_amplitude"] * carrier * np.exp(p["env_depth"] * env)
         elif dgp == "leak":
             # zero-lag common source added to target channels on post events only:
