@@ -46,7 +46,7 @@ sync_equal:            # null 2 (Riley): alpha phase coupling + shared high-gamm
   pinknoise_amplitude: 1
   pinknoise_exponent: 1
 
-ceiling:               # every effect at once, strong, near-noise-free, frontal only, 200-600 ms:
+strong:                # every effect at once, strong, near-noise-free, frontal only, 200-600 ms:
   # ciPLV/AEC-c/power/decoder AUC/reliability at their maximum in frontal, 0 elsewhere; epoch
   # network and decoder only in the 200-600 ms epochs (timing)
   data_generating_process: [osc_lag, hg_envelope, hg_power]
@@ -62,8 +62,8 @@ ceiling:               # every effect at once, strong, near-noise-free, frontal 
   env_hz: 4
   env_depth: 1          # e^2 ~ 7x high-gamma power: depth 2 (e^8 ~ 3000x) buried the hg_gain
   hg_amplitude: 10
-  hg_gain: 10
-  recalled_only: true    # high-gamma gain on later-recalled words only (decoder AUC -> 1)
+  hg_gain: 10            # every word: high-gamma power ~100x in frontal
+  recall_gain: 2         # later-recalled words a further 2x (decoder AUC -> 1)
   pinknoise_amplitude: 1
   pinknoise_exponent: 1
 

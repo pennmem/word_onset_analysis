@@ -23,8 +23,8 @@ Optional `active_ms: [a, b]` restricts the post-onset effect (osc_lag, hg_envelo
 hg_power) to a <= t < b ms, to test the epoch network's / decoder's timing.
 
 hg_power options: `onset_ms: {lobe: ms}` starts each target lobe's gain at its own time
-(latency order); `recalled_only: true` applies the gain only to words later recalled
-(the recall decoder).
+(latency order); `recall_gain` multiplies later-recalled words by a further gain (the
+recall decoder).
 
 Optional `line_amplitude` adds a 60 Hz mains sinusoid (random phase per event,
 shared by all channels), to test the notch filter on line noise.
@@ -45,6 +45,7 @@ from ptsa.data.timeseries import TimeSeries  # pyright: ignore[reportMissingType
 from helper import get_pairs, regionalize_electrodes_by_type
 
 NDArrayAny = np.ndarray
+RAMP_MS = 50   # osc_lag: phase transition at the active_ms edges
 _SIM_CONFIG_PATH = Path(__file__).parent / "config" / "simulation_config.yaml"
 
 
@@ -113,10 +114,12 @@ def replace_w_simulated_EEG(eeg: TimeSeries, dfrow: pd.Series, condition_mask: N
                             simulation_tag: str, events: pd.DataFrame | None = None) -> TimeSeries:
     """Same shape/coords as `eeg` (time in ms), signal from `simulation_tag`.
     condition_mask True = post-onset events (osc_lag: target_ppc1), False = pre; `events`
-    (indexed by eeg.event) gives correct_recall for `recalled_only`."""
+    (indexed by eeg.event) gives correct_recall for `recall_gain`."""
     p = simulation_parameters[simulation_tag]
     np.random.seed(zlib.crc32(np.ascontiguousarray(eeg.data).tobytes()))
-    lobes = _channel_lobes(regionalize_electrodes_by_type(get_pairs(dfrow)))
+    import fc_comparison_functions as fc   # the analyses' labels (recovered / MNI-neighbour), not the raw atlas
+    reg = fc.session_regions(dfrow["sub"], dfrow["exp"], str(dfrow["sess"]))
+    lobes = _channel_lobes(regionalize_electrodes_by_type(get_pairs(dfrow)) if reg is None else reg)
     target = np.isin(lobes, p["target_lobes"])
     t_ms = np.asarray(eeg.time, float)
     data = _pink(eeg.shape, p)
@@ -128,23 +131,33 @@ def replace_w_simulated_EEG(eeg: TimeSeries, dfrow: pd.Series, condition_mask: N
             hg = p["hg_amplitude"] * mne.filter.filter_data(np.random.standard_normal(eeg.shape),
                                                             float(eeg.samplerate), *p["band"], verbose=False)
             onset = np.array([p.get("onset_ms", {}).get(lb, 0) for lb in lobes])[target]
-            gain = np.where((t_ms[None, :] >= onset[:, None]) & win[None, :], p["hg_gain"], 1.0)   # (target ch, time)
-            rows = (events.loc[np.asarray(eeg.event), "correct_recall"].fillna(0).to_numpy(bool)
-                    if p.get("recalled_only") else np.ones(eeg.shape[0], bool))
-            hg[np.ix_(rows, target)] *= gain
+            on = (t_ms[None, :] >= onset[:, None]) & win[None, :]   # (target ch, time)
+            hg[:, target] *= np.where(on, p["hg_gain"], 1.0)
+            if p.get("recall_gain"):   # later-recalled words: a further gain (recall decoder)
+                rec = events.loc[np.asarray(eeg.event), "correct_recall"].fillna(0).to_numpy(bool)
+                hg[np.ix_(rec, target)] *= np.where(on, p["recall_gain"], 1.0)
             data += hg
         elif dgp == "osc_lag":
             # sustained oscillation; every other target channel shifted by phase_lag
             # (ciPLV sees only the lagged pairs); outside `win` post events are uncoupled
             mask = np.asarray(condition_mask, bool)
             lag = np.where(target, np.cumsum(target) % 2 * p["phase_lag"], 0.0)
+            # active_ms: target channels move from their outside phases to coupled ones over a
+            # RAMP_MS raised-cosine ramp (a phase jump would leak power out of the band), and
+            # non-target channels keep theirs (a redraw changed alpha power on every channel)
+            w = np.ones(t_ms.size)
+            if "active_ms" in p:
+                k = max(1, int(round(RAMP_MS * float(eeg.samplerate) / 1000)))
+                w = np.convolve(np.pad(win.astype(float), k, mode="edge"), np.hanning(k) / np.hanning(k).sum(), "same")[k:-k]
             def draw(key, n):   # (n, n_ch, 1) per-event phases
                 cov = _phase_cov(target, p[key], p["global_ppc"])
                 return (np.random.multivariate_normal(np.zeros(len(cov)), cov, size=n) + lag)[:, :, None]
             for m, key in ((~mask, "target_ppc0"), (mask, "target_ppc1")):
                 if m.any():
                     n = int(m.sum())
-                    ph = np.where(win, draw(key, n), draw("target_ppc0", n))
+                    out, cpl = draw("target_ppc0", n), draw(key, n)
+                    cpl = np.where(target[None, :, None], cpl, out)
+                    ph = out + w * np.angle(np.exp(1j * (cpl - out)))
                     data[m] += p["osc_amplitude"] * np.cos(2 * np.pi * p["oscillation_frequency"]
                                                            * t_ms[None, None, :] / 1000.0 + ph)
         elif dgp == "hg_envelope":

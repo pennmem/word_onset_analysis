@@ -45,7 +45,7 @@ WINDOWS = range(0, 1000, WIN_MS)
 MIN_TRIALS = 10
 MIN_ELECTRODES = 5   # per subject and lobe: features per classifier
 C = 7.2e-4   # L2 strength of the lab's encoding classifiers
-N_PERM = 2000  # per subject: per-subject p and chance level
+N_PERM = int(os.environ.get("DECODER_N_PERM", 2000))  # per subject: per-subject p and chance level
 
 
 def session_features(p: dict, lobe_of: dict) -> pd.DataFrame:

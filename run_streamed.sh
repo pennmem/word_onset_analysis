@@ -8,6 +8,7 @@
 # SIM_TAGS="hg_null sync_equal": the same per simulation tag instead of the real data
 # (full cohort, as the real analyses); figures/results -> */simulations/<tag>/.
 # SIM_PLOT_TAGS: plot only these tags (default: all SIM_TAGS; e.g. sweeps are compute only).
+# WORKERS: compute.py workers (default 3; ~6 GB each at peak).
 cd "${0:A:h}"
 PY=~/.venvs/phase_viz/bin/python; B=${1:-10}
 ROOT=$($PY -c "from project_paths import SCRATCH_DIR; print(SCRATCH_DIR)" 2>/dev/null | tail -1)
@@ -28,14 +29,14 @@ for ((i = 1; i <= ${#SUBS}; i += B)); do
   retry $PY prepare_sessions.py --subjects $batch --workers 3 || continue   # downloads this batch
   for t in ${=SIM_TAGS:-real}; do   # single pass; earlier batches are cached
     S=(); [[ $t != real ]] && S=(--simulation-tag $t)   # array: zsh does not word-split
-    CML_DATA_SOURCE=local $PY compute.py --workers 3 $S
+    CML_DATA_SOURCE=local $PY compute.py --workers ${WORKERS:-3} $S
   done
   drop_raw; echo "$batch" >> $DONE
 done
 for t in ${=SIM_PLOT_TAGS:-${SIM_TAGS:-real}}; do
   F=figures; R=results; S=()
   [[ $t != real ]] && F=figures/simulations/$t && R=results/simulations/$t && S=(--simulation-tag $t)
-  case $t in   # a control runs only the analyses it tests; real, nulls and ceiling run all
+  case $t in   # a control runs only the analyses it tests; real, nulls and strong run all
     leak_frontal) only=(plot_boxplots plot_epoch_network) ;;
     hg_latency) only=(plot_latency) ;;
     *) only=() ;;

@@ -1,15 +1,16 @@
-"""plot_sim_summary.py -- the null, equal-coupling and ceiling simulations side by side.
+"""plot_sim_summary.py -- the null, equal-connectivity and strong simulations side by side.
 
 Reads the per-tag tables of the plot_*.py scripts (results/simulations/<tag>/...).
 One figure per analysis: power (Cohen's d), synchrony (on - off change), recall decoder
-(AUC - permutation chance), network replicability (median r, central 95% of splits);
-one panel per tag, sharing the y-axis, so a null is read on the ceiling's scale; test-retest
+(AUC - permutation chance), network replicability (plot_reliability.py's boxes over splits);
+one panel per tag, sharing the y-axis, so a null is read on the strong scale; test-retest
 across sessions as plot_reliability.py's boxes (power and synchrony in one panel).
-Power and synchrony: mean +/- 95% CI across subjects per ROI; the decoder: frontal
-(planted in ceiling) in black, the other lobes grey.
+Power and synchrony: one row per band, the paper figures' per-ROI box plots of subjects
+(fc.roi_panel); the decoder: frontal
+(planted in strong) in black, the other lobes grey.
 -> figures/simulations/sim_summary_{power,synchrony,decoder,replicability,test_retest}.png
 
-    python plot_sim_summary.py [--tags hg_null sync_equal ceiling]
+    python plot_sim_summary.py [--tags hg_null sync_equal strong]
 """
 from __future__ import annotations
 
@@ -22,9 +23,8 @@ import pandas as pd
 
 import fc_comparison_functions as fc
 
-TITLES = {"hg_null": "Null (no coupling)", "sync_equal": "Null (equal coupling)",
-          "ceiling": "Ceiling (frontal, 200-600 ms)"}
-BANDS = [("alpha", "C0"), ("high_gamma", "C3")]
+TITLES = {"hg_null": "Null (no connectivity)", "sync_equal": "Null (equal connectivity)",
+          "strong": "Strong (frontal, 200-600 ms)"}
 
 
 def read(tag: str, path: str) -> pd.DataFrame | None:
@@ -32,32 +32,14 @@ def read(tag: str, path: str) -> pd.DataFrame | None:
     return pd.read_csv(f) if exists(f) and getsize(f) > 1 else None   # old empty tables: 1 byte
 
 
-def roi_panel(ax, tbls, labels) -> None:
-    """Mean +/- 95% CI per ROI, one series per band (offset)."""
-    x = np.arange(len(fc.ROI_ORDER))
-    for k, (t, (lab, col)) in enumerate(zip(tbls, labels)):
-        if t is None:
-            continue
-        t = t.set_index("roi").reindex(fc.ROI_ORDER)
-        xx = x + (k - 0.5) * 0.3
-        ax.errorbar(xx, t["mean"], yerr=[t["mean"] - t["ci95_lo"], t["ci95_hi"] - t["mean"]],
-                    fmt="o", ms=4, color=col, lw=1.2, capsize=0, label=lab)
-    ax.axhline(0, color="0.5", lw=0.8)
-    ax.set_xticks(x, [r.replace("hippocampus", "hipp.") for r in fc.ROI_ORDER], rotation=60, fontsize=7)
-
-
-def power(ax, tag) -> bool:
-    pw = [read(tag, f"burke_roi_power/roi_power_word_on_{b}_stats.csv") for b, _ in BANDS]
-    roi_panel(ax, [t if t is None else t[t["measure"] == "cohens_d"] for t in pw],
-              [("Alpha", "C0"), ("High gamma", "C3")])
-    return pw[0] is not None
-
-
-def synchrony(ax, tag) -> bool:
-    t = [read(tag, "burke_roi_synchrony/roi_synchrony_word_on_alpha_ciplv_stats.csv"),
-         read(tag, "burke_roi_synchrony/roi_synchrony_word_on_high_gamma_aec_c_stats.csv")]
-    roi_panel(ax, t, [("Alpha ciPLV", "C0"), ("High-gamma AEC-c", "C3")])
-    return t[0] is not None
+def roi_boxes(path: str, col: str):
+    """Panel: the paper figures' per-ROI box plots (fc.roi_panel) of one per-subject table."""
+    def panel(ax, tag) -> bool:
+        t = read(tag, path)
+        if t is not None:
+            fc.roi_panel(ax, t, col, np.random.default_rng(0), stats=fc.roi_stats(t, col))
+        return t is not None
+    return panel
 
 
 def decoder(ax, tag) -> bool:
@@ -81,11 +63,11 @@ def replicability(ax, tag) -> bool:
     if rep is not None:
         x = np.arange(len(fc.LOBES))
         for k, (m, col) in enumerate(zip(["Alpha ciPLV", "High-gamma AEC-c"], ("C0", "C3"))):
-            g = rep[rep["measure"] == m].groupby("lobe")
-            med, lo, hi = (g["r"].median(), g["r"].quantile(0.025), g["r"].quantile(0.975))
-            med, lo, hi = (s.reindex(fc.LOBES) for s in (med, lo, hi))
-            ax.errorbar(x + (k - 0.5) * 0.3, med, yerr=[med - lo, hi - med], fmt="o", ms=4,
-                        color=col, lw=1.2, label=m)
+            r = rep[rep["measure"] == m]   # as plot_reliability.py: boxes over splits, whiskers central 95%
+            ax.boxplot([r.loc[r["lobe"] == l, "r"] for l in fc.LOBES], positions=x + (k - 0.5) * 0.38,
+                       widths=0.32, patch_artist=True, showfliers=False, whis=(2.5, 97.5),
+                       boxprops=dict(facecolor=col, alpha=0.6), medianprops=dict(color="0.15"))
+            ax.plot([], [], "s", color=col, alpha=0.6, ms=9, label=m)
         ax.set_xticks(x, [l.capitalize() for l in fc.LOBES], rotation=30, fontsize=8)
     ax.axhline(0, color="0.5", lw=0.8)
     return rep is not None
@@ -113,9 +95,13 @@ RETEST = {"alpha": ("Alpha d", "C0"), "high_gamma": ("High-gamma d", "C3"),
 
 
 # {figure: [(y label, panel)] one row each}
-ANALYSES = {"power": [("Power (Cohen's d)", power)], "synchrony": [("Synchrony change (on − off)", synchrony)],
+P, Q = "burke_roi_power/roi_power_word_on_{}_per_subject.csv", "burke_roi_synchrony/roi_synchrony_word_on_{}_per_subject.csv"
+ANALYSES = {"power": [("Alpha\nCohen's d", roi_boxes(P.format("alpha"), "cohens_d")),
+                      ("High gamma\nCohen's d", roi_boxes(P.format("high_gamma"), "cohens_d"))],
+            "synchrony": [("Alpha\nciPLV (on − off)", roi_boxes(Q.format("alpha_ciplv"), "sync_diff")),
+                          ("High gamma\nAEC-c (on − off)", roi_boxes(Q.format("high_gamma_aec_c"), "sync_diff"))],
             "decoder": [("Recall AUC − chance", decoder)], "replicability": [("Network replicability r", replicability)],
-            "test_retest": [("Test-retest r across regions", retest)]}
+            "test_retest": [("Test-retest r within subjects", retest)]}
 
 
 def main() -> None:
@@ -124,7 +110,7 @@ def main() -> None:
     p.add_argument("--out-dir", default=join("figures", "simulations"))
     args = p.parse_args()
     for name, rows in ANALYSES.items():
-        fig, axes = plt.subplots(len(rows), len(args.tags), figsize=(4.2 * len(args.tags), 3.6 * len(rows)),
+        fig, axes = plt.subplots(len(rows), len(args.tags), figsize=(6.5 * len(args.tags), 3.6 * len(rows)),
                                  sharey="row", squeeze=False)
         for i, (ylabel, panel) in enumerate(rows):
             for ax, tag in zip(axes[i], args.tags):
@@ -134,7 +120,8 @@ def main() -> None:
                     ax.text(0.5, 0.5, "not run", transform=ax.transAxes, ha="center", color="0.5")
                 ax.spines[["top", "right"]].set_visible(False)
             axes[i, 0].set_ylabel(ylabel, fontsize=10)
-            axes[i, 0].legend(frameon=False, fontsize=8, loc="upper left")
+            if axes[i, 0].get_legend_handles_labels()[0]:
+                axes[i, 0].legend(frameon=False, fontsize=8, loc="upper left")
         fig.tight_layout()
         out = join(args.out_dir, f"sim_summary_{name}")
         fig.savefig(f"{out}.png", dpi=200)

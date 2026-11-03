@@ -7,6 +7,17 @@ earlier than the last entry below is undocumented.
 
 ---
 
+## 2026-11-03 — simulations plotted from 300 subjects
+
+- The full-cohort simulation run (3 tags) was taking ~35 min per 10-subject batch, mostly downloading; it was stopped after 30 of 44 batches (300 subjects cached; resumable from `stream_done.txt`).
+- The three simulations (hg_null, sync_equal, ceiling) are plotted in parallel from those 300 subjects (`logs/plot_sims_2026-11-03.sh`).
+- Paper abstract replaced with the user's new version (decoder sentence: every lobe, most persistently frontal; "we characterized"; "only the occipital network replicated strongly"; "reliably strong early visual engagement").
+- Simulator bug: target channels were picked from the raw atlas labels, while the analyses use `fc.session_regions` (recovered whole-brain labels + MNI-neighbour labels). In newer subjects (mostly R13xx-R14xx) frontal electrodes counted by the analyses were never targeted: 76 of 358 frontal subject x hemisphere values in the ceiling simulation were ~0. `replace_w_simulated_EEG` now uses `fc.session_regions` (raw atlas as fallback).
+- `ceiling` renamed `strong` (config, run_streamed.sh, plot_sim_summary.py). Its cache and those of the other targeted tags (leak_frontal, hg_latency) were wiped; the three rerun on the first 50 subjects (`logs/run_sims_2026-11-03.sh`). The nulls are unaffected (no planted effect).
+- Simulation composites: test-retest y label "Test-retest r within subjects" (was "across regions"); replicability now uses plot_reliability.py's boxes over splits; power and synchrony now use the paper figures' per-ROI box plots (fc.roi_panel; one row per band) instead of mean +/- CI points; panels widened.
+- Simulation composite titles: "coupling" -> "connectivity".
+- `plot_decoding.py`: `N_PERM` can be set with `DECODER_N_PERM` (default 2000, unchanged for real data); simulations use 200 (the real decoder took ~4 h per run).
+
 ## 2026-11-02 — simulation set cut again; ceiling fixed
 
 - `ceiling` didn't recover high-gamma power, the decoder or latency. Envelope depth 2
@@ -82,6 +93,37 @@ earlier than the last entry below is undocumented.
   - Null high-gamma test-retest (median r 0.16, 39 subjects) is inconclusive:
     shuffled-region p < .001, but Wilcoxon p = .08 and the bootstrap CI includes 0.
     Waiting for the full-cohort null.
+- Real-data decoder rerun with 2000 permutations per subject. Each subject is tested
+  against their own permutation chance (mean 0.493), paired one-sided t across
+  subjects, BH over lobes x windows.
+  - 45 of 60 cells pass (q < .05).
+  - Frontal passes in every window from 0 ms (peak AUC 0.525 at 800-900 ms).
+    Parietal passes at 0-100 ms and from 200 ms.
+  - Occipital passes from 100 ms (peak 0.519 at 500-600 ms), limbic at 200-800 ms,
+    temporal from 300 ms, hippocampus at 500-700 and 800-1000 ms.
+  - The paper's methods, Figure 7 caption, results and abstract are updated. The
+    old text said "no lobe before 200 ms" and tested against 0.5. Added the
+    Jamalabadi 2016 reference.
+- Quick look (30 subjects; no-coupling null on its ~210 cached subjects):
+  - Nulls: about 0 everywhere.
+  - Leak: synchrony about 0.
+  - Latency recovered exactly: planted 50/100/150/200/250/300 ms came back as
+    55/105/155/205/255/305 ms (bin centre +5).
+  - `ceiling` synchrony, decoder and epoch hubs: frontal only, at the planted times.
+    The decoder spills about 100 ms each side of 200-600 ms; high-gamma estimates
+    smear by about 100 ms.
+- Simulator fixes for `ceiling`:
+  - `osc_lag` with `active_ms` redrew phases on every channel at the window edges.
+    The phase jump inside the word-on window cut alpha power everywhere (d about -1.9
+    in all regions). Now only target channels change phase, over a 50 ms raised-cosine
+    ramp. Non-target power change is 0; a target channel still loses about 10% alpha
+    power from the phase change itself (isolated test).
+  - `recalled_only` replaced by `recall_gain`: the high-gamma gain (x10) now applies
+    to every word, and recalled words get a further x2. Word on vs off power is then
+    strong, and recall stays decodable (it was d about 0.3 with recalled-only).
+  - Only `ceiling` uses these options; the other tags are unchanged.
+- Full-cohort stage restarted (5 workers, `hg_null` `sync_equal` `ceiling`) with
+  the `ceiling` cache wiped; runner `logs/run_sims_2026-11-02b.sh`.
 - The 2026-11-01 full-cohort null run was stopped at batch 22; the changed tags'
   caches were wiped. Runner: `logs/run_sims_2026-11-02.sh`.
 

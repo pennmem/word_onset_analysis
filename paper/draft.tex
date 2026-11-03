@@ -68,23 +68,21 @@
 \date{}
 
 \begin{document}
-\newcommand{\abstracttext}{Studies of free recall mostly ask how activity during 
-word presentation predicts later memory, while the response to the word itself has received less attention. 
-Work on visual word processing with scalp EEG, MEG and fMRI describes a progression from visual to 
-language and memory regions, but these methods cannot resolve local activity in both space and time.
-Previous intracranial studies have typically recorded from tens of subjects with coverage concentrated 
-in the ventral visual stream. Here we map the word-onset response across the brain in 362 neurosurgical 
-subjects performing delayed free recall, comparing each word with the blank screen that preceded it. 
-The response was largest in occipital cortex, where alpha (8--13 Hz) power fell and high-gamma 
-(70--150 Hz) power rose, and the same signature of engagement appeared, more weakly, in limbic 
-and hippocampal regions. Frontal cortex instead showed increased low-frequency and decreased beta power,
- consistent with suppression. High-gamma responses began in lateral occipital cortex (${\sim}$120 ms) 
- and moved forward, reaching orbitofrontal cortex last (${\sim}$300 ms), while alpha synchrony with 
- the rest of the brain increased most in occipital cortex. The occipital response was larger when 
- the word was more expected, after longer waits, and the response weakly predicted later recall, 
- from ${\sim}$200 ms onward and most persistently in frontal cortex. Power was reliable across sessions within subjects (median test-retest $r$ = 0.67 alpha, 0.81 high gamma), whereas synchrony was not (0.19, 0.14); across subjects, only the occipital network replicated robustly ($r$ = 0.90). Together, these results show how 
- the response to a word evolves across the brain, from early visual engagement to later frontal 
- involvement, and provide a baseline for interpreting cognitive effects measured during word presentation.} 
+\newcommand{\abstracttext}{Memory effects during word study occur within the brain's response to the word itself,
+yet studies of free recall typically contrast recalled with forgotten words, subtracting this response out.
+By comparing each word with its pre-stimulus blank screen, we characterized the word-onset response across the brain
+in 362 neurosurgical patients performing delayed free recall. Occipital regions responded most strongly, with
+decreased alpha (8--13 Hz) and increased high-gamma (70--150 Hz) power; limbic regions and the hippocampus showed
+a weaker version of this pattern. Frontal regions instead showed an alpha increase, suggesting suppression.
+Among high-gamma-responsive electrodes, latencies increased from lateral occipital cortex (${\sim}$120 ms) through
+temporal and parietal regions to orbitofrontal cortex (${\sim}$320 ms). The occipital response was larger after
+longer blank intervals, consistent with temporal expectation. High-gamma activity weakly predicted later recall
+in every lobe (AUC $\leq$ 0.53), most persistently in frontal cortex. Within subjects, power changes were reliable
+across sessions (median $r$ = 0.67 alpha, 0.81 high gamma), whereas changes in inter-regional synchrony were much
+less reliable (0.19, 0.14); across subjects, only the occipital network replicated strongly ($r$ = 0.90).
+The response to a word thus moves from reliably strong early visual engagement to weaker, later frontal activity
+that nonetheless carries the most persistent memory-related signal. These results offer a benchmark for
+interpreting cognitive effects measured during word study.}
 \maketitle
 
 
@@ -225,7 +223,7 @@ and all 15 pairwise lobe contrasts were Holm-corrected.
 To test whether the response depends on how long subjects waited for the word, we used the same responsive electrodes as in the latency analysis and split each session's word events at its median blank length. For each electrode, we expressed the high-gamma response, averaged over word events, after long and after short blanks relative to the same baseline, the electrode's word-off mean over all events. A difference between groups therefore cannot come from a difference in their baselines. The effect was the peak response (0--800 ms) after long blanks minus the peak after short blanks. We averaged effects per subject and region and tested them against zero with one-sample $t$ tests, Benjamini-Hochberg corrected across regions.
 
 \subsection*{Recall prediction}\label{recall-prediction}
-To test when and where the word-onset response predicts later recall (encoding contrast: recalled vs.\ not recalled words), we averaged the high-gamma response (computed as for latency) in 100 ms windows from 0--1000 ms and z-scored it within each session. For every subject, lobe (at least 5 electrodes) and window, we trained an L2-regularized logistic regression with the penalty used by \citet[$C = 7.2\times10^{-4}$;][]{Ezzyat_2017} and balanced class weights. Models were cross-validated by leaving out one session at a time, or one list at a time for subjects with a single session. Performance was the area under the ROC curve (AUC) of the pooled held-out predictions. Across subjects, we tested AUC $> 0.5$ with one-sided $t$ tests, Benjamini-Hochberg corrected over lobes $\times$ windows. We also computed chance AUC by permutation (about 0.493); it is computed as a reference but was not used in the tests.
+To test when and where the word-onset response predicts later recall (encoding contrast: recalled vs.\ not recalled words), we averaged the high-gamma response (computed as for latency) in 100 ms windows from 0--1000 ms and z-scored it within each session. For every subject, lobe (at least 5 electrodes) and window, we trained an L2-regularized logistic regression with the penalty used by \citet[$C = 7.2\times10^{-4}$;][]{Ezzyat_2017} and balanced class weights. Models were cross-validated by leaving out one session at a time, or one list at a time for subjects with a single session. Performance was the area under the ROC curve (AUC) of the pooled held-out predictions. Because cross-validated AUC is biased below 0.5 \citep{Jamalabadi_2016}, each subject's chance level was estimated from 2000 within-session permutations of the recall labels (mean 0.493). Across subjects, we tested AUC above each subject's chance level with one-sided paired $t$ tests, Benjamini-Hochberg corrected over lobes $\times$ windows.
 
 \subsection*{Reliability}\label{reliability}
 To estimate test-retest reliability, we randomly divided each subject's sessions into two halves of at least two sessions each. Within each half, we averaged Cohen's $d$ (power) or hub strength (each electrode's mean change in synchrony over all its connections, as in Fig.~5A) per anatomical region. Reliability was the Pearson correlation between the two halves across that subject's regions. For each measure we report the median and interquartile range across subjects. To ask which lobes' network results replicate across subjects (replicability, as opposed to the within-subject reliability above), we pooled hemispheres and took each lobe's profile: its change in synchrony on each connection to the six lobes (itself included) in each of the nine epochs of the time-resolved network. We split the subjects 1000 times into two disjoint random halves of 127 subjects each, the same size for every lobe, and correlated the two halves' mean profiles (Pearson $r$; estimate: the median over splits). The spread is the central 95\% of $r$ across splits.
@@ -299,11 +297,11 @@ contrast)}\label{recall-prediction-over-the-response-encoding-contrast}
 \begin{figure*}[!tp]
 \centering
 \includegraphics[width=1\linewidth]{img/fig7_recall_time.png}
-\caption{Recall prediction from the high-gamma response (encoding contrast: recalled vs.\ not recalled). AUC per lobe and 100 ms window, mean $\pm$ SEM across subjects; dashed line: 0.5; stars: AUC $>0.5$, BH-FDR over lobe $\times$ window.}
+\caption{Recall prediction from the high-gamma response (encoding contrast: recalled vs.\ not recalled). AUC per lobe and 100 ms window, mean $\pm$ SEM across subjects; dashed line: permutation chance level; stars: AUC above chance, BH-FDR over lobe $\times$ window.}
 \label{fig:recall}
 \end{figure*}
 
-No lobe predicted recall before 200 ms (Figure~\ref{fig:recall}). Occipital cortex predicted recall first, at 200--700 ms (peak AUC 0.519 at 500--600 ms), and frontal cortex predicted it from 300 ms through 1000 ms (peak 0.525 at 800--900 ms). Temporal cortex predicted recall at 400--900 ms, parietal cortex at 300--500 and 600--800 ms, hippocampus at 500--600 ms and limbic cortex at 600--700 ms. AUCs were low ($\leq$ 0.525) because each classifier used one lobe's high gamma in one 100 ms window. This early-posterior, late-frontal order matches the subsequent memory effect in high-frequency activity \citep{Burke_2014a}.
+Frontal cortex predicted recall in every window from 0 to 1000 ms (Figure~\ref{fig:recall}; peak AUC 0.525 at 800--900 ms, chance 0.494). Frontal and parietal cortex already did so at 0--100 ms, before the high-gamma response begins (${\sim}$120 ms), which suggests a contribution from the subject's state before the word. Occipital cortex predicted recall from 100 ms on (peak 0.519 at 500--600 ms), parietal cortex from 200 ms (peak 0.514 at 400--500 ms), limbic cortex at 200--800 ms and temporal cortex from 300 ms (both peaking at 0.511 at 600--700 ms), and hippocampus at 500--700 and 800--1000 ms (peak 0.511 at 500--600 ms). AUCs were low ($\leq$ 0.525) because each classifier used one lobe's high gamma in one 100 ms window. This early-posterior, late-frontal order matches the subsequent memory effect in high-frequency activity \citep{Burke_2014a}.
 
 \subsection*{6. Reliability across
 sessions}\label{reliability-across-sessions}
