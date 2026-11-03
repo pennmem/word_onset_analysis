@@ -5,17 +5,17 @@ and high gamma. As riley-thesis compute_retest_reliability.py (its channel-level
 each subject's sessions split at random into two halves (seed 0), >= MIN_SESS_PER_HALF
 sessions per half; per session, d averaged per anatomical region (reg_full), then sessions
 averaged within each half; test-retest = Pearson r across the subject's regions between the
-halves (>= MIN_FINITE regions); dashed: medians. Synchrony (alpha ciPLV, high-gamma AEC-c;
+halves (>= MIN_FINITE regions); box plots of the subjects' r (whiskers: central 95%),
+median [IQR] printed; dotted: the no-coupling
+simulation's median (results/simulations/hg_null), when present. Synchrony (alpha ciPLV, high-gamma AEC-c;
 word on - word off): the same on hub strength (fc.electrode_sync: each electrode's mean
 over all partners, as the synchrony summary figure; riley-thesis hub reliability).
 Network replicability per lobe across subjects (hemispheres pooled; raw change, no hub averaging): a lobe's profile = its change
 on each connection to the 6 lobes (itself included; lobe pairs with >= MIN_SUBJECTS_PAIR
 subjects) x the 9 epochs of plot_epoch_network; N_SPLITS times, two disjoint random halves
 of the subjects, the same size for every lobe (half the least-covered lobe's subjects), each
-r = Pearson between the halves' mean profiles (the estimate: median over splits). Uncertainty:
-each split's halves also bootstrapped (subjects resampled with replacement); bootstrapped r runs
-low (duplicated subjects add noise), so its distribution is shifted to the split median; box
-plots of that distribution per lobe, whiskers its 95% interval (null: should include 0).
+r = Pearson between the halves' mean profiles; box plots of the N_SPLITS r per lobe (the
+estimate: their median; whiskers: central 95% across splits).
 -> figures/reliability/reliability_word_on.png (+ test_retest_word_on.csv,
    profile_replication_word_on.csv)
 
@@ -61,8 +61,7 @@ def retest(d: pd.DataFrame, key: str, cols: list[str], order: pd.DataFrame) -> p
 
 def profile_replication(etbl: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
     """Per lobe and split: Pearson r between two disjoint subject halves' mean connection x
-    epoch profiles (hemispheres pooled), + the same with each half bootstrapped (r_boot) and
-    r_boot shifted to the split median (r_ci, for the 95% interval)."""
+    epoch profiles (hemispheres pooled)."""
     ab = etbl["roi"].str.split("|", expand=True)
     pair = ["|".join(sorted((a.split("-", 1)[1], b.split("-", 1)[1]))) for a, b in zip(ab[0], ab[1])]
     e = etbl.assign(roi=pair).groupby(["sub", "roi", "epoch_ms"])["sync_diff"].mean()
@@ -78,17 +77,10 @@ def profile_replication(etbl: pd.DataFrame, rng: np.random.Generator) -> pd.Data
     for lobe, v in prof.items():
         for _ in range(N_SPLITS):
             i = rng.permutation(len(v))
-            ia, ib = rng.choice(i[:half], half), rng.choice(i[half:2 * half], half)   # bootstrap each half
-            r = []
-            for ja, jb in ((i[:half], i[half:2 * half]), (ia, ib)):   # split; bootstrapped split
-                a, b = np.nanmean(v[ja], 0), np.nanmean(v[jb], 0)
-                ok = np.isfinite(a) & np.isfinite(b)
-                r.append(pearsonr(a[ok], b[ok])[0])
-            rows.append((lobe, half, ok.sum(), *r))
-    d = pd.DataFrame(rows, columns=["lobe", "n_half", "n_features", "r", "r_boot"])
-    g = d.groupby("lobe")
-    d["r_ci"] = d["r_boot"] + g["r"].transform("median") - g["r_boot"].transform("median")
-    return d
+            a, b = np.nanmean(v[i[:half]], 0), np.nanmean(v[i[half:2 * half]], 0)
+            ok = np.isfinite(a) & np.isfinite(b)
+            rows.append((lobe, half, ok.sum(), pearsonr(a[ok], b[ok])[0]))
+    return pd.DataFrame(rows, columns=["lobe", "n_half", "n_features", "r"])
 
 
 def main() -> None:
@@ -113,10 +105,16 @@ def main() -> None:
     order = order[order.groupby("sub")["half"].transform(lambda x: min(x.sum(), (~x).sum())) >= MIN_SESS_PER_HALF]
     sync_cols = [m for m, _ in SYNC.values()]
     rt = retest(el, "region", list(BANDS) + sync_cols, order)
+    if rt.empty:   # no subject with enough sessions (small simulation runs)
+        rt = pd.DataFrame(columns=["sub", *BANDS, *sync_cols], dtype=float)
     os.makedirs(args.out_dir, exist_ok=True)
     stem = join(args.out_dir, f"reliability_{BEH}")
     rt.to_csv(fc.table_path(join(args.out_dir, f"test_retest_{BEH}.csv")), index=False)
-    print("[reliability] test-retest r (median): " + ", ".join(f"{k} {rt[k].median():.2f}" for k in list(BANDS) + sync_cols)
+    # per measure: median [IQR] across subjects (as riley-thesis)
+    labels = {**BANDS, **dict(SYNC.values())}
+    ci = {k: rt[k].quantile([0.25, 0.75]).to_numpy() for k in labels}
+    print("[reliability] test-retest r, median [IQR]: " + ", ".join(
+        f"{k} {rt[k].median():.2f} [{ci[k][0]:.2f}, {ci[k][1]:.2f}]" for k in labels)
           + f"  (n={len(rt)} subjects)")
 
     lobe_of, rep = fc.load_burke_maps(), []
@@ -125,28 +123,34 @@ def main() -> None:
         rep.append(profile_replication(etbl, np.random.default_rng(0)).assign(measure=label))
     rep = pd.concat(rep)
     rep.to_csv(fc.table_path(join(args.out_dir, f"profile_replication_{BEH}.csv")), index=False)
-    q = rep.groupby(["measure", "lobe"], sort=False)["r_ci"].agg(
+    q = rep.groupby(["measure", "lobe"], sort=False)["r"].agg(
         lambda r: f"{r.median():.2f} [{r.quantile(0.025):.2f}, {r.quantile(0.975):.2f}]")
-    print(f"[reliability] network profile replication (median r [95% bootstrap]; {rep['n_half'].iloc[0]} subjects per half):\n"
+    print(f"[reliability] network profile replication (median r [central 95% of splits]; {rep['n_half'].iloc[0]} subjects per half):\n"
           + q.unstack("lobe")[fc.LOBES].to_string())
 
-    panels = [("Power", "regions", BANDS),
-              ("Synchrony (hub strength)", "regions", dict(SYNC.values()))]
-    fig, axes = plt.subplots(1, 3, figsize=(15, 3.8))
-    axes[1].sharey(axes[0])
-    for ax, (title, unit, cols) in zip(axes, panels):
-        for (k, label), col in zip(cols.items(), ("C0", "C3")):
-            ax.hist(rt[k].dropna(), bins=np.linspace(-1, 1, 41), color=col, alpha=0.6, label=label)
-            ax.axvline(rt[k].median(), color=col, ls="--", lw=1.5)
-        ax.set_title(title, fontsize=12)
-        ax.set_xlabel(f"Test-retest r across {unit}", fontsize=11)
-        ax.legend(frameon=False)
-        ax.spines[["top", "right"]].set_visible(False)
-    axes[0].set_ylabel("Subjects", fontsize=11)
-    ax, x = axes[2], np.arange(len(fc.LOBES))
+    # null reference: the no-coupling simulation's median per measure (real data only)
+    nf = join("results", "simulations", "hg_null", "reliability", f"test_retest_{BEH}.csv")
+    null = pd.read_csv(nf) if not getattr(args, "simulation_tag", None) and os.path.exists(nf) \
+        and os.path.getsize(nf) > 1 else None
+    fig, axes = plt.subplots(1, 2, figsize=(12, 3.8), gridspec_kw={"width_ratios": [1, 1.6]})
+    ax, x = axes[0], np.array([0, 1, 2.4, 3.4])   # power | synchrony
+    for xi, k, col in zip(x, labels, ("C0", "C3", "C0", "C3")):
+        v = rt[k].dropna().to_numpy()
+        if len(v):   # subjects; whiskers: central 95%, as the replicability boxes
+            ax.boxplot([v], positions=[xi], widths=0.6, patch_artist=True, showfliers=False, whis=(2.5, 97.5),
+                       boxprops=dict(facecolor=col, alpha=0.6), medianprops=dict(color="0.15"))
+        if null is not None:
+            ax.plot([xi - 0.3, xi + 0.3], [null[k].median()] * 2, color="0.4", ls=":", lw=1.5)
+    ax.axhline(0, color="0.5", lw=0.8)
+    ax.set_xticks(x, [labels[k] for k in labels], rotation=30)
+    ax.set_ylim(top=1)
+    ax.set_title("Test-retest across sessions", fontsize=12)
+    ax.set_ylabel("r (within subject)", fontsize=11)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax, x = axes[1], np.arange(len(fc.LOBES))
     for k, ((_, label), col) in enumerate(zip(SYNC.values(), ("C0", "C3"))):
         r = rep[rep["measure"] == label]
-        ax.boxplot([r.loc[r["lobe"] == l, "r_ci"] for l in fc.LOBES], positions=x + (k - 0.5) * 0.38,
+        ax.boxplot([r.loc[r["lobe"] == l, "r"] for l in fc.LOBES], positions=x + (k - 0.5) * 0.38,
                    widths=0.32, patch_artist=True, showfliers=False, whis=(2.5, 97.5),
                    boxprops=dict(facecolor=col, alpha=0.6), medianprops=dict(color="0.15"))
         ax.plot([], [], "s", color=col, alpha=0.6, ms=9, label=label)

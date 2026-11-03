@@ -7,6 +7,84 @@ earlier than the last entry below is undocumented.
 
 ---
 
+## 2026-11-02 — simulation set cut again; ceiling fixed
+
+- `ceiling` didn't recover high-gamma power, the decoder or latency. Envelope depth 2
+  multiplies high-gamma power by about e^8 (~3000x), which buried the 4x gain. Now
+  `env_depth` is 1 (~7x) and `hg_gain` is 10.
+- `hg_recall_frontal` dropped. `ceiling` already tests recalled vs. not-recalled words
+  and the timing (200-600 ms).
+- `hg_latency`: gain steps up (x4) at a known time per lobe: frontal 50, occipital 100,
+  parietal 150, limbic 200, hippocampus 250, temporal 300 ms. Previously occipital,
+  temporal and frontal at 100/200/300; recovered as 105/206/306 ms.
+- `sync_equal` made near-deterministic: phase PPC 0.9999 before and after onset, pink
+  noise 1 instead of 10. Alpha power and ciPLV differences should be ~0 with almost
+  no scatter.
+- Each control plots only its own analyses (`run_streamed.sh`):
+  - `leak_frontal`: ROI boxplots and the epoch network.
+  - `hg_latency`: latency.
+  - Nulls and `ceiling` still run everything.
+- Sweeps paused: not run, and the recovery figure isn't in the paper.
+- New `plot_sim_summary.py` → `figures/simulations/sim_summary_<analysis>.png`, one figure per analysis: power,
+  synchrony, recall decoder, network replicability. Panels: `hg_null`, `sync_equal`,
+  `ceiling`, sharing the y-axis.
+  `sim_summary_test_retest.png`: the test-retest histograms (power and synchrony rows)
+  for the same three tags.
+- `plot_reliability.py` no longer crashes when no subject has enough sessions for
+  test-retest. With 30 subjects the nulls had none, so no replicability table was
+  written.
+- Real-data decoder (2000 permutations) started on 2026-11-02 in parallel with the
+  simulations instead of after them, for the abstract deadline.
+- Test-retest reliability: histograms replaced with box plots across subjects.
+  - One r per subject (a single random session split, as in riley-thesis
+    `compute_retest_reliability.py`). Opaque boxes, no dots, whiskers at the central
+    95% of subjects.
+  - Reported as median [IQR] only, no test vs 0: reliability is judged by its size,
+    and "above 0" doesn't make a measure reliable. Real data, 91 subjects (the paper
+    said 85; that count was stale):
+
+    | Measure | Median r [IQR] |
+    |---|---|
+    | Alpha d | 0.67 [0.38, 0.85] |
+    | High-gamma d | 0.81 [0.58, 0.93] |
+    | Alpha ciPLV | 0.19 [-0.05, 0.43] |
+    | High-gamma AEC-c | 0.14 [-0.04, 0.32] |
+
+  - Interim versions today (a Wilcoxon/Holm test vs 0, the bootstrap distribution of
+    the median) were dropped.
+  - Panel title "Test-retest across sessions", y label "r (within subject)". The
+    no-coupling simulation's median is drawn as a dotted reference when its table
+    exists.
+- Network replicability simplified to the plain splits.
+  - 1000 random splits of the subjects into two disjoint halves of 127 (no
+    replacement). Each split gives r between the halves' mean connection x epoch
+    profiles. Box over the 1000 r, median = estimate, whiskers = central 95% of
+    splits.
+  - Dropped: the within-split bootstrap and the shift to the split median (added
+    2026-11-01).
+  - Occipital: alpha 0.90 [0.81, 0.95], high gamma 0.81 [0.64, 0.90]. Alpha intervals
+    exclude 0 only in parietal (0.42 [0.15, 0.62]) and limbic (0.43 [0.17, 0.65]); all
+    high-gamma intervals except occipital include 0.
+- The paper (methods, Figure 8 caption, results) and the simulation composites are
+  updated to match.
+- Paper wording: the abstract gains a reliability sentence (power reliable within
+  subjects, synchrony not, only the occipital network replicates). "Power/synchrony
+  maps" became "power/synchrony", and "patients" became "subjects" throughout
+  (7 places).
+- Found: a small positive bias in high-gamma Cohen's d. In the full-cohort no-coupling
+  null, mean d is +0.0026 (SE 0.0004, 213 subjects); alpha is 0.0000.
+  - Cause: each high-gamma sub-band is divided by its word-off mean, estimated from the
+    same word-off trials. So word off averages exactly 1, while word on is divided by a
+    noisy estimate, which biases it up (Jensen's inequality).
+  - Pure-noise test: +0.0017 (SE 0.00013). Dividing by the mean of both conditions
+    gives +0.0001.
+  - Not fixed yet: the fix needs the real compute rerun.
+  - Null high-gamma test-retest (median r 0.16, 39 subjects) is inconclusive:
+    shuffled-region p < .001, but Wilcoxon p = .08 and the bootstrap CI includes 0.
+    Waiting for the full-cohort null.
+- The 2026-11-01 full-cohort null run was stopped at batch 22; the changed tags'
+  caches were wiped. Runner: `logs/run_sims_2026-11-02.sh`.
+
 ## 2026-11-01 — simulations cut + rerun; decoder permutations; replicability intervals
 
 - Simulator: pink noise generated at a fixed length (8192 samples) and cropped. FFT

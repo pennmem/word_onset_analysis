@@ -35,11 +35,18 @@ done
 for t in ${=SIM_PLOT_TAGS:-${SIM_TAGS:-real}}; do
   F=figures; R=results; S=()
   [[ $t != real ]] && F=figures/simulations/$t && R=results/simulations/$t && S=(--simulation-tag $t)
+  case $t in   # a control runs only the analyses it tests; real, nulls and ceiling run all
+    leak_frontal) only=(plot_boxplots plot_epoch_network) ;;
+    hg_latency) only=(plot_latency) ;;
+    *) only=() ;;
+  esac
   for s d in plot_boxplots . plot_spectrum burke_roi_power \
              plot_timecourse burke_roi_power plot_epoch_network burke_roi_synchrony plot_latency latency \
              plot_anticipation latency plot_decoding decoding plot_reliability reliability; do
+    (( ${#only} )) && (( ! ${only[(Ie)$s]} )) && continue
     CML_DATA_SOURCE=local $PY $s.py $S --out-dir $F/$d   # figures from the cache
   done
+  (( ${#only} )) && continue
   Rscript mixed_models.R latency $R/latency/hg_latency_word_on_electrodes.csv
   Rscript mixed_models.R bands $R/burke_roi_power/roi_power_word_on_alpha_per_electrode.csv
   [[ $t == real ]] && $PY plot_mixed.py

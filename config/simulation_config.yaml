@@ -12,23 +12,13 @@ hg_null:
   target_lobes: [frontal]
   pinknoise_amplitude: 10
   pinknoise_exponent: 1
-hg_latency:            # latency order: high-gamma gain starts at a known time per lobe
+hg_latency:            # latency order: high-gamma gain steps up at a known time per lobe (half-max = onset)
   data_generating_process: hg_power
   band: [70, 150]
   hg_amplitude: 10
-  hg_gain: 2
-  target_lobes: [occipital, temporal, frontal]
-  onset_ms: {occipital: 100, temporal: 200, frontal: 300}
-  pinknoise_amplitude: 10
-  pinknoise_exponent: 1
-hg_recall_frontal:     # recall decoder: high-gamma gain on later-recalled words only, frontal, 400-700 ms
-  data_generating_process: hg_power
-  band: [70, 150]
-  hg_amplitude: 10
-  hg_gain: 1.5
-  target_lobes: [frontal]
-  recalled_only: true
-  active_ms: [400, 700]
+  hg_gain: 4
+  target_lobes: [frontal, occipital, parietal, limbic, hippocampus, temporal]
+  onset_ms: {frontal: 50, occipital: 100, parietal: 150, limbic: 200, hippocampus: 250, temporal: 300}
   pinknoise_amplitude: 10
   pinknoise_exponent: 1
 # Volume conduction: ciPLV and AEC-c should not respond.
@@ -43,8 +33,8 @@ sync_equal:            # null 2 (Riley): alpha phase coupling + shared high-gamm
   data_generating_process: [osc_lag, hg_envelope]   # equal before and after onset -> no change anywhere
   target_lobes: [frontal, temporal, parietal, occipital, limbic, hippocampus]
   global_ppc: 0.01
-  target_ppc0: 0.5
-  target_ppc1: 0.5
+  target_ppc0: 0.9999   # near-deterministic phases: alpha power and ciPLV differences ~0 with
+  target_ppc1: 0.9999   # almost no scatter (AEC-c needs envelope fluctuations, so it keeps some)
   phase_lag: 1.5708
   oscillation_frequency: 10
   osc_amplitude: 20
@@ -53,7 +43,7 @@ sync_equal:            # null 2 (Riley): alpha phase coupling + shared high-gamm
   env_depth: 0.5
   hg_amplitude: 10
   equal_conditions: true
-  pinknoise_amplitude: 10
+  pinknoise_amplitude: 1
   pinknoise_exponent: 1
 
 ceiling:               # every effect at once, strong, near-noise-free, frontal only, 200-600 ms:
@@ -70,9 +60,9 @@ ceiling:               # every effect at once, strong, near-noise-free, frontal 
   osc_amplitude: 20
   band: [70, 110]
   env_hz: 4
-  env_depth: 2
+  env_depth: 1          # e^2 ~ 7x high-gamma power: depth 2 (e^8 ~ 3000x) buried the hg_gain
   hg_amplitude: 10
-  hg_gain: 4
+  hg_gain: 10
   recalled_only: true    # high-gamma gain on later-recalled words only (decoder AUC -> 1)
   pinknoise_amplitude: 1
   pinknoise_exponent: 1
