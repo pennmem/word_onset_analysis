@@ -7,6 +7,12 @@ earlier than the last entry below is undocumented.
 
 ---
 
+## 2026-11-04 — proposal draft; variability / trial-modulator preliminary results
+
+- New `plot_variability.py` (-> `figures/variability/`): electrode direction (up / down per lobe), variance shares (between vs within subjects), trial modulators (serial position, list number, blank interval; per-subject OLS, BH-FDR), recall ~ covariates, SME raw vs covariates removed. Robust outlier trials dropped (10 MAD); catFR1 list -1 (unscored practice) and serial positions > 12 excluded; the blank of serial position 2 (first in the events; position 1 has no blank baseline) set to the session median.
+- Found: no trial-level artifact rejection in the pipeline. R1323T session 3 trial 90 (broadband transient ~5000x on 82 of 148 electrodes, 655 ms) makes the supramarginal-gyrus spike in Fig. 4B. Not yet fixed in the main pipeline.
+- New `proposal/proposal.tex` (variability, task drivers, memory), reusing paper figures + the three new ones; `proposal/extra.bib` adds Correa 2006, Todorovic 2012, Brown 2006, Pinheiro-Chagas 2024 (check author list).
+
 ## 2026-11-03 — decoder: per-session AUC (DeHaan et al. 2025)
 
 - `plot_decoding.py`: AUC within each held-out session, averaged per subject; subjects with >= 3 sessions; one-sided t vs 0.5. Replaces the pooled held-out AUC, whose chance level was ~0.493 (fold intercepts track the training recall rate), and its per-subject permutations (`DECODER_N_PERM` gone). Rerun on the real data and strong / hg_null / sync_equal.

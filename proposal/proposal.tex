@@ -1,0 +1,184 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage{natbib}
+\usepackage[colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue]{hyperref}
+\setlength{\parskip}{4pt}
+
+\title{The word response is not constant: variability, task drivers and memory\\[2pt]
+\large Research proposal (draft)}
+\author{Juee Naik}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Summary}
+Free-recall studies compare words that are later recalled with words that are forgotten (the subsequent memory
+effect). The shared response to the word itself is subtracted out and treated as constant. In 362 neurosurgical
+patients performing delayed free recall, we find that this response varies widely across subjects, across
+electrodes within a region, and from trial to trial. Part of the trial-to-trial variation follows task variables
+that also predict recall: high-gamma power falls and alpha power rises across serial positions in every lobe.
+Removing serial position, list number and the blank interval from the high-gamma response halves the frontal
+subsequent memory effect, removes it in temporal cortex and the hippocampus, and reduces it by a third in occipital
+cortex. We propose to characterize where the variability sits, which task variables drive it, and how much of the
+subsequent memory effect they account for.
+
+\section*{Background and gap}
+\textbf{Serial position.} High-frequency activity during encoding falls across serial positions regardless of later
+recall, and serial position modulates the subsequent memory effect \citep[iEEG, encoding;][]{Serruya_2012}; posterior
+gamma predicts recall mainly for early items \citep[scalp EEG, encoding;][]{Sederberg_2006a}. Scalp EEG classifiers
+match recalled and forgotten words across serial positions for this reason \citep[encoding and retrieval;][]{Li_2024},
+and in fMRI no signal reliably predicts later memory once serial position, item and other confounds are removed
+\citep[encoding;][]{Halpern_2023}. The large iEEG maps of the subsequent memory effect
+\citep[encoding;][]{Burke_2014a,Long_2014,Solomon_2017} did not adjust for these variables jointly.
+
+\textbf{List number.} List-level high-frequency activity predicts how well a whole list is recalled
+\citep[iEEG, encoding;][]{Rubinstein_2023}, and practice or fatigue explain little of list-to-list recall
+variability \citep[behaviour;][]{Kahana_2018}. We found no iEEG study of how list number changes the word response itself.
+
+\textbf{Blank interval.} Longer gaps before an item improve its recall \citep[behaviour;][]{Brown_2006}. Responses
+after a longer wait can be larger because attention is directed to the expected moment
+\citep[scalp EEG, cued timing;][]{Correa_2006} or because the response has recovered more from the previous stimulus;
+expected stimuli can also give smaller responses \citep[MEG, auditory;][]{Todorovic_2012}. Whether the blank interval
+changes the iEEG word response, and in which direction, is untested.
+
+\textbf{Heterogeneity.} High-frequency activity is suppressed in default-mode regions during tasks
+\citep[iEEG, visual search vs.\ rest;][]{Ossand_n_2011}, and activation order is consistent across subjects while
+individual sites increase or decrease \citep[iEEG, arithmetic vs.\ rest;][]{PinheiroChagas_2024}. Existing large
+iEEG atlases map recalled vs.\ forgotten words; none characterizes the word-on vs.\ word-off response, its
+electrode-level heterogeneity, or its trial-level drivers.
+
+\section*{Data and existing results}
+FR1, catFR1 and pyFR (362 subjects, 1009 sessions). Each word (word on, 0--600 ms) is compared with the blank screen
+before it (word off, $-700$ to $-100$ ms). Bands: alpha (8--13 Hz, multitaper) and high gamma (70--150 Hz, Hilbert
+envelopes in sub-bands). The word-onset paper establishes the average response: occipital alpha decreases and
+high-gamma increases, a weaker version in limbic regions and the hippocampus, and a frontal alpha increase
+(Fig.~\ref{fig:power}); high-gamma latencies from ${\sim}$120 ms in lateral occipital cortex to ${\sim}$320 ms in
+orbitofrontal cortex; a larger occipital response after longer waits (Fig.~\ref{fig:wait}); weak recall prediction in
+every lobe (AUC $\leq$ 0.53; Fig.~\ref{fig:recall}); and power changes that are reliable within subjects across
+sessions (median $r$ = 0.67 alpha, 0.81 high gamma; Fig.~\ref{fig:reliability}).
+
+\begin{figure}[!ht]\centering
+\includegraphics[width=\linewidth]{img/fig1_power.png}
+\caption{Average word-onset power change per region (word on vs.\ word off; mean $\pm$ SEM across subjects).}
+\label{fig:power}
+\end{figure}
+
+\section*{Aim 1. Where does the variability sit?}
+\textbf{Preliminary.} The subject distributions are wide in every region (Fig.~\ref{fig:subjects}). Splitting the
+electrode-level Cohen's $d$ into between-subject and within-subject (between-electrode) parts, subjects account for
+only 12--37\% of the variance in high gamma (frontal 13\%, temporal 12\%, occipital 25\%, hippocampus 37\%) and
+25--36\% in alpha; most of it lies between electrodes of the same region within a subject. Regions also mix
+directions (Fig.~\ref{fig:direction}): 40\% of occipital electrodes increase in high gamma and 3\% decrease, while in
+frontal cortex 5\% increase and 4\% decrease. In alpha, 21\% of occipital electrodes decrease but 11\% increase.
+
+\textbf{Plan.} (1) Decompose the response into subject, electrode, session and trial components with a
+variance-components model, per region and time window. (2) Locate increasing and decreasing electrodes in MNI space
+within regions (e.g.\ frontal eye fields and lateral prefrontal cortex vs.\ the rest of frontal cortex) and test
+whether they cluster anatomically or by recording type (depth vs.\ surface). (3) Test whether a subject's alpha and
+high-gamma responses covary across electrodes (do electrodes with larger alpha decreases show larger high-gamma
+increases?), which separates real heterogeneity from sampling noise.
+
+\begin{figure}[!ht]\centering
+\includegraphics[width=0.85\linewidth]{img/figS1_power_subjects.png}
+\caption{Word-onset power change per region, distributions across subjects.}
+\label{fig:subjects}
+\end{figure}
+
+\begin{figure}[!ht]\centering
+\includegraphics[width=0.9\linewidth]{img/electrode_direction.png}
+\caption{Fraction of electrodes whose power significantly increases (up) or decreases (down) at word onset
+(per session: Welch $t$ on log power, word on vs.\ word off, BH-FDR across the session's electrodes).}
+\label{fig:direction}
+\end{figure}
+
+\section*{Aim 2. Which task variables drive trial-to-trial changes?}
+\textbf{Preliminary.} Per subject and lobe, we regressed each trial's word-on power (log, z-scored within session,
+outlier trials removed) on serial position, list number and blank interval (Fig.~\ref{fig:modulators}). High gamma
+falls with serial position in every lobe (occipital $-0.042$ SD per SD of serial position, temporal $-0.032$,
+frontal $-0.020$; all $q < .05$, 254--339 subjects) and alpha rises (0.009--0.021). Alpha also rises across lists
+in most lobes, consistent with habituation over a session. The blank interval had small effects: occipital high gamma
+$+0.007$ and frontal alpha $+0.006$. Together the three variables explain 1--2\% of trial-to-trial variance (median
+$R^2$), so most trial variation is unexplained by them. Serial position 1 is not in the data: the first word follows
+the countdown and has no blank-screen baseline.
+
+\textbf{Plan.} (1) Resolve the effects in time and test them on latency as well as magnitude. (2) Separate temporal
+expectation from recovery after the previous word: add the previous word's response size and its offset time as
+covariates, and compare a hazard-rate model (expectation grows with waiting) with an adaptation model (recovery with
+time since the previous word). (3) Test whether serial-position effects shrink over lists and sessions (familiarity
+with the task). (4) Model the unexplained trial variance: pre-stimulus alpha and high gamma as predictors of the
+response (state before the word).
+
+\begin{figure}[!ht]\centering
+\includegraphics[width=\linewidth]{img/trial_modulators.png}
+\caption{Word-on power (z within session) by serial position, list number and blank interval (quantile bins);
+mean $\pm$ SEM across subjects per lobe. Serial positions 2--12; scored lists only.}
+\label{fig:modulators}
+\end{figure}
+
+\begin{figure}[!ht]\centering
+\includegraphics[width=0.8\linewidth]{img/fig9_anticipation.png}
+\caption{Occipital high-gamma response after long vs.\ short waits (from the word-onset paper).}
+\label{fig:wait}
+\end{figure}
+
+\section*{Aim 3. How much of the subsequent memory effect do task variables explain?}
+\textbf{Preliminary.} Serial position and list number predict recall across subjects (logistic
+$\beta = -0.19$ and $-0.09$ per SD, 361 subjects, both $p < 10^{-6}$); the blank interval does not ($p = .47$; the
+interval varies only by a few hundred ms). Both also change the word response (Aim 2), so they can create a
+subsequent memory effect without any memory-specific signal. Removing them from each trial's response
+(Fig.~\ref{fig:sme}) reduced the high-gamma subsequent memory effect in frontal cortex from $d = 0.030$ to 0.014, in
+temporal cortex from 0.020 to 0.001, in the hippocampus from 0.014 to 0.001, and in occipital cortex from 0.098 to
+0.067 (paired $t$, all $p < .01$). The occipital alpha effect shrank from $-0.051$ to $-0.037$. The occipital
+effect survives, while the frontal and temporal effects are largely accounted for by where the word fell in the list.
+
+\textbf{Plan.} (1) Repeat with the time-resolved classifier (Fig.~\ref{fig:recall}) with covariates removed, and with
+recalled and forgotten words matched on serial position and list \citep[as][]{Li_2024}. (2) Test whether the blank
+interval affects recall of the next or the current word, and whether the word response mediates it. (3) Ask whether
+electrodes that are suppressed at word onset (Aim 1) carry a different subsequent memory effect from those that are
+activated, in frontal cortex in particular.
+
+\begin{figure}[!ht]\centering
+\includegraphics[width=0.9\linewidth]{img/sme_controlled.png}
+\caption{Subsequent memory effect (Cohen's $d$, recalled vs.\ not recalled, word on 0--600 ms) per lobe, raw and
+after regressing each trial's response on serial position (linear and positions 2--3), list number and blank
+interval within subject; mean $\pm$ SEM across subjects.}
+\label{fig:sme}
+\end{figure}
+
+\begin{figure}[!ht]\centering
+\includegraphics[width=0.9\linewidth]{img/fig7_recall_time.png}
+\caption{Recall prediction from the high-gamma response (encoding contrast; per-session AUC, mean $\pm$ SEM across
+subjects; from the word-onset paper).}
+\label{fig:recall}
+\end{figure}
+
+\section*{Reliability}
+Power changes are reliable within subjects across sessions, while synchrony changes are not
+(Fig.~\ref{fig:reliability}). The proposal therefore focuses on power; connectivity enters only where it is reliable
+(the occipital network).
+
+\begin{figure}[!ht]\centering
+\includegraphics[width=0.9\linewidth]{img/fig8_reliability.png}
+\caption{Session-to-session reliability within subjects, and replicability across subjects (from the word-onset paper).}
+\label{fig:reliability}
+\end{figure}
+
+\section*{Open issues}
+\begin{itemize}\setlength{\itemsep}{0pt}
+\item \textbf{Artifact trials.} The current pipeline has no trial-level artifact rejection. One trial in one subject
+(a broadband transient on 82 of 148 electrodes) produces a spike at 650 ms in the supramarginal gyrus group average.
+The preliminary results drop robust outliers per electrode; the main pipeline needs the same.
+\item \textbf{Serial position 1} is excluded by the baseline design; primacy is measured from position 2.
+\item \textbf{Blank intervals} span a narrow range, which limits the expectation analysis; RepFR1 or ltpFR2, with
+different timing, would extend it.
+\item \textbf{Extensions:} eye tracking during word presentation (Kucewicz datasets) and repetition suppression
+(RepFR1).
+\end{itemize}
+
+\bibliographystyle{apalike}
+\bibliography{../paper/refs,extra}
+\end{document}
