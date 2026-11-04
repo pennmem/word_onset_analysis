@@ -63,26 +63,12 @@
 \providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
 
 
-\title{Neural correlates of word stimulus response in human iEEG}
+\title{Word-onset response across the human brain: timing, networks and reliability}
 \author{Juee Naik, Michael Kahana}
 \date{}
 
 \begin{document}
-\newcommand{\abstracttext}{Memory effects during word study occur within the brain's response to the word itself,
-yet studies of free recall typically contrast recalled with forgotten words, subtracting this response out.
-By comparing each word with its pre-stimulus blank screen, we characterized the word-onset response across the brain
-in 362 neurosurgical patients performing delayed free recall. Occipital regions responded most strongly, with
-decreased alpha (8--13 Hz) and increased high-gamma (70--150 Hz) power; limbic regions and the hippocampus showed
-a weaker version of this pattern. Frontal regions instead showed an alpha increase, suggesting suppression.
-Among high-gamma-responsive electrodes, latencies increased from lateral occipital cortex (${\sim}$120 ms) through
-temporal and parietal regions to orbitofrontal cortex (${\sim}$320 ms). The occipital response was larger after
-longer blank intervals, consistent with temporal expectation. High-gamma activity weakly predicted later recall
-in every lobe (AUC $\leq$ 0.53), most persistently in frontal cortex. Within subjects, power changes were reliable
-across sessions (median $r$ = 0.67 alpha, 0.81 high gamma), whereas changes in inter-regional synchrony were much
-less reliable (0.19, 0.14); across subjects, only the occipital network replicated strongly (median $r$ = 0.90).
-The response to a word thus moves from reliably strong early visual engagement to weaker, later frontal activity
-that nonetheless carries the most persistent memory-related signal. These results offer a benchmark for
-interpreting cognitive effects measured during word study.}
+\newcommand{\abstracttext}{Scalp EEG, MEG and fMRI studies establish the stages of visual word processing, and intracranial studies typically analyze how word-evoked activity varies with cognitive state, yet studies of the word response itself, often small and ventral-stream focused, leave network dynamics and replicability largely untested. Recording across the brain in 362 neurosurgical patients performing delayed free recall, we compare each word with its pre-stimulus blank screen. As expected, occipital regions respond most strongly, with decreased alpha (8-13 Hz) and increased high-gamma (70-150 Hz) power, although magnitude varies widely across patients. Beyond the ventral stream, frontal regions show an alpha increase, suggesting suppression. High-gamma latencies increase from lateral occipital cortex (~120 ms) to orbitofrontal cortex (~320 ms); occipital regions reliably lead most lobes and frontal regions lag most, but adjacent lobes largely overlap. Alpha synchrony rises, with hubs shifting forward from occipital to parietal to temporal regions, while the hippocampus does not join. Despite variability across subjects, power changes within subjects are stable across sessions (median r = 0.67 alpha, 0.81 high gamma), but synchrony changes are not (0.19, 0.14); across subjects, only occipital connectivity replicates (r = 0.90). The response also carries cognitive effects: occipital responses are larger after longer pre-stimulus periods, consistent with temporal expectation, and single-lobe classifiers weakly predict later recall, in frontal regions even before the response begins. These results establish where, when and how reliably the brain responds to words, a reference for interpreting cognitive effects measured during word presentation.}
 \maketitle
 
 
@@ -240,7 +226,7 @@ onset}\label{power-changes-at-word-onset}
 \begin{figure*}[!tp]
 \centering
 \panelc{A}{0.5}{img/fig1_power.png}\hfill\panelc{B}{0.48}{img/fig2b_spectrum.png}
-\caption{Power changes at word onset ($\Delta$ word: word on vs.\ word off). (A) Cohen's d of alpha (8--13 Hz, top) and high-gamma (70--150 Hz, bottom) power per region; mean $\pm$ SEM across subjects; numbers: subjects; stars: BH-FDR. (B) Spectral profile: t across subjects per region and frequency (5--150 Hz, log-spaced bins; 50, 60, 100, 120 Hz excluded); outlines enclose significant cells (BH-FDR $q<.05$ over all regions and frequencies). Supplementary Figure~\ref{fig:spectrum-fine} shows the same analysis per anatomical subregion.}
+\caption{Power changes at word onset ($\Delta$ word: word on vs.\ word off). (A) Cohen's d of alpha (8--13 Hz, top) and high-gamma (70--150 Hz, bottom) power per region; mean $\pm$ SEM across subjects; BH-FDR corrected. (B) Spectral profile: t across subjects per region and frequency (5--150 Hz, log-spaced bins; 50, 60, 100, 120 Hz excluded); outlines enclose significant cells (BH-FDR $q<.05$ over all regions and frequencies). Supplementary Figure~\ref{fig:spectrum-fine} shows the same analysis per anatomical subregion.}
 \label{fig:power}
 \end{figure*}
 
@@ -255,7 +241,7 @@ Per anatomical subregion (Supplementary Figure~\ref{fig:spectrum-fine}; 153 of 3
 \begin{figure*}[!tp]
 \centering
 \includegraphics[width=0.9\linewidth]{img/fig4b_latency_fine.png}
-\caption{Order of high-gamma responses after word onset. Half-max latency per anatomical subregion (left; mean $\pm$ SEM across subjects; n: subjects) and the average high-gamma response over time, as a fraction of its peak (right; shading: 95\% CI across subjects).}
+\caption{Order of high-gamma responses after word onset. Half-max latency per anatomical subregion (left; mean $\pm$ SEM across subjects; n: subjects) and the average high-gamma response over time, as a fraction of its peak (95\% CI across subjects).}
 \label{fig:latency}
 \end{figure*}
 
@@ -301,7 +287,7 @@ contrast)}\label{recall-prediction-over-the-response-encoding-contrast}
 \label{fig:recall}
 \end{figure*}
 
-Frontal cortex predicted recall in every window from 0 to 1000 ms (Figure~\ref{fig:recall}; peak AUC 0.525 at 800--900 ms, chance 0.494). Frontal and parietal cortex already did so at 0--100 ms, before the high-gamma response begins (${\sim}$120 ms), which suggests a contribution from the subject's state before the word. Occipital cortex predicted recall from 100 ms on (peak 0.519 at 500--600 ms), parietal cortex from 200 ms (peak 0.514 at 400--500 ms), limbic cortex at 200--800 ms and temporal cortex from 300 ms (both peaking at 0.511 at 600--700 ms), and hippocampus at 500--700 and 800--1000 ms (peak 0.511 at 500--600 ms). AUCs were low ($\leq$ 0.525) because each classifier used one lobe's high gamma in one 100 ms window. This early-posterior, late-frontal order matches the subsequent memory effect in high-frequency activity \citep{Burke_2014a}.
+Frontal regions predict recall in every window from 0 to 1000 ms (Figure~\ref{fig:recall}; peak AUC 0.525 at 800--900 ms, chance 0.494). Frontal and parietal regions already do so at 0--100 ms, before the high-gamma response begins (${\sim}$120 ms), which suggests a contribution from the subject's state before the word. Occipital regions predict recall from 100 ms on (peak 0.519 at 500--600 ms), parietal cortex from 200 ms (peak 0.514 at 400--500 ms), limbic regions at 200--800 ms and temporal regions from 300 ms (both peaking at 0.511 at 600--700 ms), and hippocampus at 500--700 and 800--1000 ms (peak 0.511 at 500--600 ms). AUCs were low ($\leq$ 0.525) because each classifier used one lobe's high gamma in one 100 ms window, and every electrode in the lobe was one feature. This early-posterior, late-frontal order matches the subsequent memory effect in high-frequency activity \citep{Burke_2014a}.
 
 \subsection*{6. Reliability across
 sessions}\label{reliability-across-sessions}
@@ -309,13 +295,13 @@ sessions}\label{reliability-across-sessions}
 \begin{figure*}[!tp]
 \centering
 \includegraphics[width=1\linewidth]{img/fig8_reliability.png}
-\caption{Session-to-session reliability (left): per subject, Pearson r across regions between two random halves of the subject's sessions, for power (Cohen's $d$) and synchrony hub strength; box plots across subjects (whiskers: central 95\%). (Right) Replicability across subjects of each lobe's connectivity profile: its change on each connection $\times$ window, hemispheres pooled, correlated between two disjoint halves of the subjects (127 each); box plots over 1000 splits (whiskers: central 95\%).}
+\caption{Session-to-session reliability (left) per subject, Pearson r across regions between two random halves of the subject's sessions, for power (Cohen's $d$) and connectivity hub strength; box plots across subjects (whiskers: central 95\%). (Right) Replicability across subjects of each lobe's connectivity profile: its change on each connection $\times$ window, hemispheres pooled, correlated between two disjoint halves of the subjects (127 each); box plots over 1000 splits (whiskers: central 95\%).}
 \label{fig:reliability}
 \end{figure*}
 
-Power was reliable across sessions (Figure~\ref{fig:reliability}, left; 91 subjects with at least two sessions per half): median $r$ = 0.67 [IQR 0.38, 0.85] for alpha and 0.81 [0.58, 0.93] for high gamma. Synchrony was much less reliable, with a quarter of subjects below zero (median $r$ = 0.19 [$-0.05$, 0.43] for alpha ciPLV, 0.14 [$-0.04$, 0.32] for high-gamma AEC-c).
+Power is reliable across sessions (Figure~\ref{fig:reliability}, left; 91 subjects with at least two sessions per half): median $r$ = 0.67 [IQR 0.38, 0.85] for alpha and 0.81 [0.58, 0.93] for high gamma. Synchrony was much less reliable, with a quarter of subjects below zero (median $r$ = 0.19 [$-0.05$, 0.43] for alpha ciPLV, 0.14 [$-0.04$, 0.32] for high-gamma AEC-c).
 
-Across subjects (right; 127 subjects per half), occipital cortex's connectivity profile replicated well (median $r$ = 0.90 [central 95\% of splits 0.81, 0.95] for alpha, 0.81 [0.64, 0.90] for high gamma), while every other lobe replicated weakly (alpha $\approx$0.3--0.4, intervals excluding 0 only in parietal and limbic cortex; high gamma $\approx$0.1--0.2, all intervals including 0). Occipital replicability stayed at 0.89 after removing each window's mean, so it reflects the pattern over connections, not only a shared time course. In the other lobes, replicability came largely from their connection with occipital cortex. Without it, alpha $r$ fell from 0.43 to 0.17 in limbic cortex and from 0.32 to 0.03 in hippocampus, and remained weak in frontal (0.28), parietal (0.35) and temporal cortex (0.22).
+Across subjects (right; 127 subjects per half), occipital cortex's connectivity profile replicates well (median $r$ = 0.90 [central 95\% of splits 0.81, 0.95] for alpha, 0.81 [0.64, 0.90] for high gamma), while every other lobe replicated weakly (alpha $\approx$0.3--0.4, intervals excluding 0 only in parietal and limbic cortex; high gamma $\approx$0.1--0.2, all intervals including 0). Occipital replicability stayed at 0.89 after removing each window's mean, so it reflects the pattern over connections, not only a shared time course. In the other lobes, replicability came largely from their connection with occipital cortex. Without it, alpha $r$ fell from 0.43 to 0.17 in limbic cortex and from 0.32 to 0.03 in hippocampus, and remained weak in frontal (0.28), parietal (0.35) and temporal cortex (0.22).
 
 \section*{Discussion}\label{discussion}
 
