@@ -7,6 +7,13 @@ earlier than the last entry below is undocumented.
 
 ---
 
+## 2026-11-03 — decoder: per-session AUC (DeHaan et al. 2025)
+
+- `plot_decoding.py`: AUC within each held-out session, averaged per subject; subjects with >= 3 sessions; one-sided t vs 0.5. Replaces the pooled held-out AUC, whose chance level was ~0.493 (fold intercepts track the training recall rate), and its per-subject permutations (`DECODER_N_PERM` gone). Rerun on the real data and strong / hg_null / sync_equal.
+- Then, as DeHaan et al. 2025: C chosen per held-out session by nested leave-one-session-out over 52 values (1e-6 to 1e11; was fixed 7.2e-4), refit on the training sessions (`fit_path`: damped Newton along the C path, matches sklearn to 1e-7); montages (electrode sets) decoded separately and averaged (4 subjects changed electrodes across sessions; missing electrodes had been zero-filled).
+- Connectivity recovery sweeps (rec_ciplv, rec_aec_c; 8 tags) rerun on 10 random subjects with >= 5 frontal electrodes (seed 0; Riley: can a planted non-null level be measured?). Stale pre-fix sweep caches moved to `sim/_stale_2026-11-03/`. Then 4 levels each (ciPLV 0.01/0.25/0.5/0.75, AEC-c depth 0/0.5/1/2; briefly 3) on 30 random frontal subjects (the 10 + 20, seed 1); stale rec_power caches moved there too. `figures/simulations/recovery.png` force-added to git so it can be viewed remotely.
+- Abstract: the user's latest version (early occipital alpha synchronization; "frontal lobe"; "r up to 0.90"). Decoder methods and Figure caption updated; results text pending the rerun.
+
 ## 2026-11-03 — simulations plotted from 300 subjects
 
 - The full-cohort simulation run (3 tags) was taking ~35 min per 10-subject batch, mostly downloading; it was stopped after 30 of 44 batches (300 subjects cached; resumable from `stream_done.txt`).

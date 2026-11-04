@@ -6,14 +6,13 @@ ram_utils, also train on retrieval events). Per trial and electrode: the high-ga
 response (plot_latency.response: envelope minus its word-off mean, smoothed) averaged in
 100 ms windows, 0-1000 ms; z-scored within session. Per subject (>= MIN_TRIALS recalled and
 forgotten words), Burke lobe (hemispheres pooled; >= MIN_ELECTRODES electrodes) and window:
-L2 logistic regression on the lobe's electrodes (C as ram_utils / Ezzyat et al. 2017; balanced class weights),
-leave-one-session-out (single-session subjects: leave-one-list-out); AUC of the pooled
-held-out predictions. Chance: N_PERM within-session label shuffles per subject (as ram_utils'
-permuted_loso_cross_validation), each cross-validated in full: the subject's chance level (their
-mean; ~0.49, since held-out AUC is biased below 0.5) and p = (1 + #perm AUC >= AUC) / (1 + N_PERM).
-All label sets are fit at once (fit_predict: the same L2 logistic regression, AUCs equal sklearn's).
-Across subjects: one-sided paired t of AUC > the subject's chance level, BH-FDR over lobe x window;
-stars q < .05; dashed: mean chance level.
+L2 logistic regression on the lobe's electrodes (balanced class weights), as DeHaan et al. 2025:
+leave-one-session-out (>= MIN_SESSIONS sessions per montage), C chosen per held-out session by an inner
+leave-one-session-out over CS (best mean inner AUC), refit on the training sessions; AUC within
+each held-out session, averaged per montage, montages averaged per subject (a montage = one
+electrode set; a changed set would zero-fill the missing electrodes). Within one session the AUC is unbiased (chance 0.5); the
+pooled held-out AUC is not (fold intercepts track the training recall rate: chance ~0.49).
+Across subjects: one-sided t of AUC > 0.5, BH-FDR over lobe x window; stars q < .05; dashed: 0.5.
 -> figures/decoding/recall_auc_time_word_on.png (+ _per_subject.csv, _stats.csv)
 
     python plot_decoding.py [--from-csv] [--simulation-tag TAG]
@@ -28,7 +27,7 @@ from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.linalg import cho_factor, cho_solve
+from scipy.linalg import solve
 from scipy import special
 from scipy.stats import rankdata, ttest_1samp
 from sklearn.model_selection import LeaveOneGroupOut
@@ -44,8 +43,9 @@ WIN_MS = 100
 WINDOWS = range(0, 1000, WIN_MS)
 MIN_TRIALS = 10
 MIN_ELECTRODES = 5   # per subject and lobe: features per classifier
-C = 7.2e-4   # L2 strength of the lab's encoding classifiers
-N_PERM = int(os.environ.get("DECODER_N_PERM", 2000))  # per subject: per-subject p and chance level
+CS = np.logspace(-6, 11, 52)   # L2 strengths searched (DeHaan et al. 2025)
+MIN_SESSIONS = 3   # as DeHaan et al. 2025
+CHANCE = 0.5
 
 
 def session_features(p: dict, lobe_of: dict) -> pd.DataFrame:
@@ -63,60 +63,79 @@ def session_features(p: dict, lobe_of: dict) -> pd.DataFrame:
     return f
 
 
-def fit_predict(Xtr: np.ndarray, Ytr: np.ndarray, Xte: np.ndarray, tol: float = 1e-9) -> np.ndarray:
-    """P(recalled) on Xte from sklearn's LogisticRegression(C, class_weight="balanced") fit to each
-    column of Ytr (label sets) at once: Newton steps with a fixed Hessian bound (monotone, exact optimum)."""
-    n = len(Xtr); n1 = Ytr.sum(0); S = np.where(Ytr, n / (2 * n1), n / (2 * (n - n1)))
-    X1, T1 = np.c_[Xtr, np.ones(n)], np.c_[Xte, np.ones(len(Xte))]
-    r = np.r_[np.full(Xtr.shape[1], 1 / C), 0.0]   # L2 on the weights, not the intercept
-    L = cho_factor(X1.T @ X1 * S.max() / 4 + np.diag(r))
-    th = np.zeros((X1.shape[1], Ytr.shape[1]))
-    for _ in range(5000):
-        step = cho_solve(L, X1.T @ (S * (special.expit(X1 @ th) - Ytr)) + r[:, None] * th)
-        th -= step
-        if np.abs(step).max() < tol:
+def fit_path(X: np.ndarray, y: np.ndarray, tol: float = 1e-8) -> np.ndarray:
+    """(features + intercept, len(CS)) weights of sklearn's LogisticRegression(C, class_weight="balanced")
+    for each C in CS: damped Newton, warm-started along the path (strong -> weak penalty)."""
+    n, n1 = len(y), y.sum(); S = np.where(y, n / (2 * n1), n / (2 * (n - n1)))
+    X1 = np.c_[X, np.ones(n)]
+    def loss(th, r):
+        z = X1 @ th
+        return (S * (np.logaddexp(0, z) - y * z)).sum() + 0.5 * (r * th ** 2).sum()
+    th, out = np.zeros(X1.shape[1]), []
+    for c in CS:
+        r = np.r_[np.full(X.shape[1], 1 / c), 0.0]   # L2 on the weights, not the intercept
+        for it in range(100):
+            q = special.expit(X1 @ th)
+            step = solve((X1.T * (S * q * (1 - q))) @ X1 + np.diag(r), X1.T @ (S * (q - y)) + r * th, assume_a="pos")
+            f0, k = loss(th, r), 1.0
+            while loss(th - k * step, r) > f0 and k > 1e-4:   # halve the step if the loss rises
+                k /= 2
+            th = th - k * step
+            if np.abs(k * step).max() < tol:
+                break
+        out.append(th)
+        if it == 0:   # unchanged from the previous C: the penalty no longer matters, nor will it
             break
-    return special.expit(T1 @ th)
+    return np.column_stack(out + [th] * (len(CS) - len(out)))
 
 
-def auc(d: pd.DataFrame, cols: list[str], Y: np.ndarray, groups) -> np.ndarray:
-    """Pooled held-out AUC of each label set (column of Y)."""
-    X = d[cols].fillna(0).to_numpy()
-    prob = np.empty(Y.shape)
-    for tr, te in LeaveOneGroupOut().split(X, groups=groups):
-        prob[te] = fit_predict(X[tr], Y[tr], X[te])
-    rk, n1 = rankdata(prob, axis=0), Y.sum(0)
-    return ((rk * Y).sum(0) - n1 * (n1 + 1) / 2) / (n1 * (len(Y) - n1))
+def session_auc(score: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """AUC of each column of score (one held-out session)."""
+    rk, n1 = rankdata(score, axis=0), y.sum()
+    return ((rk * y[:, None]).sum(0) - n1 * (n1 + 1) / 2) / (n1 * (len(y) - n1))
+
+
+def loso(X: np.ndarray, y: np.ndarray, sess: np.ndarray) -> list:
+    """[(test index, (n test, len(CS)) scores)] per held-out session with both classes."""
+    out = []
+    for tr, te in LeaveOneGroupOut().split(X, groups=sess):
+        if 0 < y[te].sum() < len(te) and 0 < y[tr].sum() < len(tr):
+            out.append((te, np.c_[X[te], np.ones(len(te))] @ fit_path(X[tr], y[tr])))
+    return out
+
+
+def auc(d: pd.DataFrame, cols: list[str], y: np.ndarray, sess: np.ndarray) -> float:
+    """Nested leave-one-session-out AUC: per held-out session, C maximising the mean inner
+    held-out-session AUC, scores from the refit on all training sessions; mean over sessions."""
+    X, out = d[cols].fillna(0).to_numpy(), []
+    for te, score in loso(X, y, sess):
+        tr = np.setdiff1d(np.arange(len(y)), te)
+        inner = [session_auc(s, y[tr][i]) for i, s in loso(X[tr], y[tr], sess[tr])]
+        out.append(session_auc(score[:, [np.argmax(np.mean(inner, 0))]], y[te])[0])
+    return float(np.mean(out))
 
 
 def decode_subject(sub: str, fs: list) -> list:
-    """Per lobe x window AUCs (and their permutation means) for one subject."""
-    d = pd.concat(fs, ignore_index=True).dropna(subset=["recalled"])
-    y = d["recalled"].to_numpy(int)
-    if min(y.sum(), len(y) - y.sum()) < MIN_TRIALS:
-        return []
-    sess = d["session"].to_numpy()
-    if len(set(sess)) > 1:
-        groups = sess
-    else:
-        groups = d["list"] if d["list"].notna().all() else np.arange(len(d)) * 5 // len(d)
-    rng = np.random.default_rng(0)
-    perms = []
-    for _ in range(N_PERM):   # shuffle labels within each session
-        i = np.arange(len(d))
-        for s in set(sess):
-            i[sess == s] = rng.permutation(i[sess == s])
-        perms.append(i)
-    Y = np.column_stack([y] + [y[i] for i in perms])   # true labels + permutations
+    """Per lobe x window AUCs for one subject (mean over montages)."""
+    mont: dict[frozenset, list] = {}
+    for f in fs:
+        mont.setdefault(frozenset(f.columns), []).append(f)
     tres = []
-    for lobe in fc.LOBES:
-        for a in WINDOWS:
-            cols = [c for c in d.columns if c.startswith(f"{lobe}|") and c.endswith(f"|{a}")]
-            if len(cols) >= MIN_ELECTRODES:
-                r = auc(d, cols, Y, groups)
-                tres.append({"sub": sub, "lobe": lobe, "window_ms": a, "n_electrodes": len(cols), "auc": r[0],
-                             "null": r[1:].mean(), "p": (1 + (r[1:] >= r[0]).sum()) / (1 + N_PERM)})
-    return tres
+    for m in mont.values():
+        d = pd.concat(m, ignore_index=True).dropna(subset=["recalled"])
+        y = d["recalled"].to_numpy(int)
+        sess = d["session"].to_numpy()
+        if min(y.sum(), len(y) - y.sum()) < MIN_TRIALS or len(set(sess)) < MIN_SESSIONS:
+            continue
+        for lobe in fc.LOBES:
+            for a in WINDOWS:
+                cols = [c for c in d.columns if c.startswith(f"{lobe}|") and c.endswith(f"|{a}")]
+                if len(cols) >= MIN_ELECTRODES:
+                    tres.append({"sub": sub, "lobe": lobe, "window_ms": a, "n_electrodes": len(cols),
+                                 "auc": auc(d, cols, y, sess)})
+    if not tres:
+        return []
+    return pd.DataFrame(tres).groupby(["sub", "lobe", "window_ms"], as_index=False).mean().to_dict("records")
 
 
 def main() -> None:
@@ -139,9 +158,9 @@ def main() -> None:
         tres.to_csv(fc.table_path(f"{stem}_per_subject.csv"), index=False)
 
     g = tres.groupby(["lobe", "window_ms"])
-    st = g["auc"].agg(["mean", "sem", "size"]).join(g["null"].mean()).join(
-        g["p"].apply(lambda p: (p < 0.05).mean()).rename("frac_subjects_p05")).reset_index()
-    st["p"] = [ttest_1samp(x["auc"] - x["null"], 0, alternative="greater").pvalue for _, x in g]
+    st = g["auc"].agg(["mean", "sem", "size"]).reset_index()
+    st["null"] = CHANCE   # kept for plot_sim_summary.py
+    st["p"] = [ttest_1samp(x["auc"], CHANCE, alternative="greater").pvalue for _, x in g]
     st["q"] = multipletests(st["p"], method="fdr_bh")[1]
     st.to_csv(fc.table_path(f"{stem}_stats.csv"), index=False)
     fig, axes = plt.subplots(2, 3, figsize=(11, 6), sharex=True, sharey=True)
@@ -161,9 +180,8 @@ def main() -> None:
     fig.savefig(f"{stem}.png", dpi=300)
     fig.savefig(f"{stem}.pdf")
     plt.close(fig)
-    print(f"[decoding] mean permutation chance level {st['null'].mean():.3f}; "
-          f"{int((st['q'] < 0.05).sum())} of {len(st)} lobe x window cells AUC > chance at q < .05; "
-          f"subjects p < .05 per cell: median {st['frac_subjects_p05'].median():.1%}")
+    print(f"[decoding] {tres['sub'].nunique()} subjects; "
+          f"{int((st['q'] < 0.05).sum())} of {len(st)} lobe x window cells AUC > 0.5 at q < .05")
     print(f"[saved] {stem}.png")
 
 
