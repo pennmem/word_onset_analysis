@@ -37,6 +37,7 @@ from tqdm.auto import tqdm
 
 import fc_comparison_functions as fc
 from compute import power_dir
+from plot_latency import half_max, response, responsive
 
 BEH = "word_on"
 BANDS = {"alpha": "Alpha", "high_gamma": "High gamma"}
@@ -44,6 +45,7 @@ COVS = ["serialpos", "list", "blank_ms"]
 COV_LABEL = {"serialpos": "Serial position", "list": "List number", "blank_ms": "Blank interval"}
 OUTLIER_MAD = 10
 N_BLANK_BINS = 8   # quantile bins, plotted at their median
+SP_GROUPS = {"early": (2, 4), "late": (8, 12)}   # serial positions, for the response time course
 
 
 def covariates(g: pd.DataFrame) -> pd.DataFrame:
@@ -58,8 +60,8 @@ def zs(v: np.ndarray) -> np.ndarray:
     return (v - np.nanmean(v, 0)) / np.nanstd(v, 0)
 
 
-def session_tables(p: dict, lobe_of: dict) -> tuple[list, pd.DataFrame | None]:
-    """(electrode rows, trial x lobe table) of one session."""
+def session_tables(p: dict, lobe_of: dict) -> tuple[list, pd.DataFrame | None, list]:
+    """(electrode rows, trial x lobe table, high-gamma time courses per lobe x serial-position group) of one session."""
     lo, hi = np.log(np.asarray(p["trial_pow_lo"], float)), np.log(np.asarray(p["trial_pow_hi"], float))
     for x in (lo, hi):   # robust outliers per electrode
         med = np.nanmedian(x, 0); mad = np.nanmedian(np.abs(x - med), 0) * 1.4826
@@ -71,12 +73,12 @@ def session_tables(p: dict, lobe_of: dict) -> tuple[list, pd.DataFrame | None]:
     if ok.any():
         sig[ok] = multipletests(pv[ok], method="fdr_bh")[0]
     sub = str(p["sid"][0])
-    el = [{"sub": sub, "label": l, "lobe": lb, "d": d, "dir": (np.sign(tt) if s else 0)}
+    el = [{"sub": sub, "session": str(p["sid"]), "label": l, "lobe": lb, "d": d, "dir": (np.sign(tt) if s else 0)}
           for l, lb, d, tt, s in zip(p["labels"], lobe, p["cohens_d"], t, sig) if lb]
     w = fc.load_events(fc.dfrow_from_sid(p["sid"]), BEH)
     w = w[np.asarray(w.attrs["mask"], bool)]
     if len(w) != len(hi):
-        return el, None
+        return el, None, []
     y = zs(hi)
     tr = pd.DataFrame({"sub": sub, "session": str(p["sid"]), "serialpos": w["serialpos"].to_numpy(float),
                        "list": w["trial"].to_numpy(float), "blank_ms": np.asarray(p["blank_ms_hi"], float),
@@ -84,7 +86,22 @@ def session_tables(p: dict, lobe_of: dict) -> tuple[list, pd.DataFrame | None]:
     for lb in fc.LOBES:
         if (lobe == lb).any():
             tr[lb] = np.nanmean(y[:, lobe == lb], 1)
-    return el, tr
+    cur = []
+    if "env_hi" in p:   # high gamma: responsive electrodes' time course, early vs late serial positions
+        x, _ = response(p)
+        pk = np.nanmax(np.abs(x), axis=-1)   # (E, C) per-trial peak over the whole clip (the window mean can miss a transient)
+        med = np.nanmedian(pk, 0); mad = np.nanmedian(np.abs(pk - med), 0) * 1.4826
+        x[np.isnan(hi) | (np.abs(pk - med) > OUTLIER_MAD * mad)] = np.nan   # the outlier trials
+        use = responsive(p)
+        sp = w["serialpos"].to_numpy(float)
+        ok = (w["trial"].to_numpy(float) >= 1)
+        for lb in fc.LOBES:
+            for grp, (a, b) in SP_GROUPS.items():
+                m, e = ok & (sp >= a) & (sp <= b), use & (lobe == lb)
+                if e.any() and m.any():
+                    cur.append({"sub": sub, "session": str(p["sid"]), "lobe": lb, "group": grp,
+                                "curve": np.nanmean(x[np.ix_(m, e)], axis=(0, 1))})
+    return el, tr, cur
 
 
 def modulators(tr: pd.DataFrame) -> pd.DataFrame:
@@ -150,18 +167,99 @@ def main() -> None:
         if args.from_csv:
             E[band], T[band] = pd.read_csv(stem(f"electrodes_{band}.csv")), pd.read_csv(stem(f"trials_{band}.csv"))
             continue
-        els, trs = [], []
+        els, trs, curs = [], [], []
         for f in tqdm(fc.session_files(power_dir(save_root, BEH, band), "_power.pkl", args.n_sessions), desc=band):
-            el, tr = session_tables(fc.load_pickle(str(f)), lobe_of)
-            els += el
+            p = fc.load_pickle(str(f))
+            el, tr, cur = session_tables(p, lobe_of)
+            els += el; curs += cur
             if tr is not None:
                 trs.append(tr)
+            if cur:
+                times = p["env_hi_t0_ms"] + p["env_step_ms"] * (np.arange(len(cur[0]["curve"])) + 0.5)
         E[band], T[band] = pd.DataFrame(els), pd.concat(trs, ignore_index=True)
         os.makedirs(os.path.dirname(stem("x")), exist_ok=True)
         E[band].to_csv(stem(f"electrodes_{band}.csv"), index=False); T[band].to_csv(stem(f"trials_{band}.csv"), index=False)
+        if curs:
+            C = pd.DataFrame([c["curve"] for c in curs], columns=[f"{t:.2f}" for t in times])
+            C[["sub", "session", "lobe", "group"]] = [(c["sub"], c["session"], c["lobe"], c["group"]) for c in curs]
+            C.to_csv(stem("hg_curves_by_serialpos.csv"), index=False)
 
     # trial analyses: scored lists only (catFR1 list -1 is an unscored practice list); serial position <= 12
     T = {b: t[(t["list"] >= 1) & (t["serialpos"] <= 12)] for b, t in T.items()}
+
+    # 1b. do electrode differences replicate across sessions, and do alpha and high gamma go together?
+    rel = []
+    for band, e in E.items():
+        for sub, g in e.groupby("sub"):
+            ss = sorted(g["session"].unique())
+            if len(ss) < 2:
+                continue
+            g = g.assign(half=g["session"].map({s: i % 2 for i, s in enumerate(ss)}))
+            w = g.groupby(["lobe", "label", "half"])["d"].mean().unstack("half").dropna()
+            for lb, h in w.groupby(level="lobe"):
+                if len(h) >= 5:
+                    rel.append({"band": band, "sub": sub, "lobe": lb, "r": np.corrcoef(h[0], h[1])[0, 1], "n": len(h)})
+    rel = pd.DataFrame(rel); rel.to_csv(stem("electrode_reliability_per_subject.csv"), index=False)
+    ah = E["alpha"].merge(E["high_gamma"], on=["sub", "session", "label", "lobe"], suffixes=("_a", "_g"))
+    ah = ah.groupby(["sub", "lobe", "label"])[["d_a", "d_g"]].mean().reset_index()
+    cpl = pd.DataFrame([{"sub": sub, "lobe": lb, "r": np.corrcoef(g["d_a"], g["d_g"])[0, 1]}
+                        for (sub, lb), g in ah.groupby(["sub", "lobe"]) if len(g) >= 5])
+    cpl.to_csv(stem("alpha_hg_coupling_per_subject.csv"), index=False)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 3.8))
+    x = np.arange(len(fc.LOBES))
+    for k, (band, col) in enumerate(zip(BANDS, ("C0", "C3"))):
+        r = rel[rel["band"] == band]
+        axes[0].boxplot([r.loc[r["lobe"] == l, "r"].dropna() for l in fc.LOBES], positions=x + (k - 0.5) * 0.38,
+                        widths=0.32, patch_artist=True, showfliers=False, whis=(2.5, 97.5),
+                        boxprops=dict(facecolor=col, alpha=0.6), medianprops=dict(color="0.15"))
+        axes[0].plot([], [], "s", color=col, alpha=0.6, ms=9, label=BANDS[band])
+    axes[0].set_ylabel("Electrode pattern, session halves\n(r across a lobe's electrodes, per subject)")
+    axes[1].boxplot([cpl.loc[cpl["lobe"] == l, "r"].dropna() for l in fc.LOBES], positions=x, widths=0.5,
+                    patch_artist=True, showfliers=False, whis=(2.5, 97.5),
+                    boxprops=dict(facecolor="0.6", alpha=0.6), medianprops=dict(color="0.15"))
+    axes[1].set_ylabel("Alpha vs high-gamma Cohen's d\n(r across a lobe's electrodes, per subject)")
+    for ax in axes:
+        ax.axhline(0, color="0.5", lw=0.8); ax.set_xticks(x, [l.capitalize() for l in fc.LOBES], rotation=30)
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[0].legend(frameon=False, fontsize=8)
+    fig.tight_layout(); fig.savefig(join(args.out_dir, "electrode_reliability.png"), dpi=200); plt.close(fig)
+    rst = pd.concat([rel.groupby(["band", "lobe"])["r"].agg(["median", "size"]).assign(what="session halves"),
+                     cpl.groupby("lobe")["r"].agg(["median", "size"]).assign(what="alpha vs high gamma", band="both")
+                     .set_index("band", append=True).swaplevel()]).reset_index()
+    rst.to_csv(stem("electrode_reliability_stats.csv"), index=False)
+
+    # 2b. serial position: size or timing of the high-gamma response?
+    C = pd.read_csv(stem("hg_curves_by_serialpos.csv"))
+    tcols = [c for c in C.columns if c not in ("sub", "session", "lobe", "group")]
+    times = np.array(tcols, float)
+    S = C.groupby(["sub", "lobe", "group"])[tcols].mean()
+    lat = []
+    for (sub, lb, grp), v in S.iterrows():
+        l, pk = half_max(v.to_numpy()[None], times)
+        lat.append({"sub": sub, "lobe": lb, "group": grp, "latency_ms": l[0], "peak": pk[0]})
+    lat = pd.DataFrame(lat).pivot_table(index=["sub", "lobe"], columns="group", values=["latency_ms", "peak"]).dropna()
+    lst = []
+    for lb, g in lat.groupby(level="lobe"):
+        lst.append({"lobe": lb, "n": len(g),
+                    "peak_early": g[("peak", "early")].mean(), "peak_late": g[("peak", "late")].mean(),
+                    "p_peak": ttest_rel(g[("peak", "early")], g[("peak", "late")]).pvalue,
+                    "latency_early_ms": g[("latency_ms", "early")].median(), "latency_late_ms": g[("latency_ms", "late")].median(),
+                    "p_latency": ttest_rel(g[("latency_ms", "early")], g[("latency_ms", "late")]).pvalue})
+    lst = pd.DataFrame(lst); lst.to_csv(stem("serialpos_timecourse_stats.csv"), index=False)
+    fig, axes = plt.subplots(1, len(fc.LOBES), figsize=(16, 3), sharex=True)
+    show = (times >= -100) & (times < 1000)
+    for ax, lb in zip(axes, fc.LOBES):
+        for grp, a in (("early", 1), ("late", 0.4)):
+            v = S.xs((lb, grp), level=("lobe", "group")).loc[:, show]
+            mu, se = v.mean(), v.sem()
+            ax.plot(times[show], mu, color=fc.LOBE_COLORS[lb], alpha=a, lw=2,
+                    label=f"Positions {SP_GROUPS[grp][0]}-{SP_GROUPS[grp][1]}")
+            ax.fill_between(times[show], mu - se, mu + se, color=fc.LOBE_COLORS[lb], alpha=0.15 * a, lw=0)
+        ax.axhline(0, color="0.5", lw=0.8); ax.set_title(lb.capitalize(), color=fc.LOBE_COLORS[lb])
+        ax.spines[["top", "right"]].set_visible(False); ax.set_xlabel("Time after word onset (ms)")
+        ax.legend(frameon=False, fontsize=7)
+    axes[0].set_ylabel("High-gamma response\n(responsive electrodes)")
+    fig.tight_layout(); fig.savefig(join(args.out_dir, "serialpos_timecourse.png"), dpi=200); plt.close(fig)
 
     # 1-2. heterogeneity and variance shares
     het, var = [], []
@@ -182,7 +280,7 @@ def main() -> None:
     for ax, (band, h) in zip(axes, het.groupby("band", sort=False)):
         h = h.set_index("lobe").reindex(fc.LOBES); x = np.arange(len(fc.LOBES))
         ax.bar(x, h["frac_up"], color=[fc.LOBE_COLORS[l] for l in fc.LOBES], label="Increase")
-        ax.bar(x, -h["frac_down"], color=[fc.LOBE_COLORS[l] for l in fc.LOBES], alpha=0.45, hatch="//", label="Decrease")
+        ax.bar(x, -h["frac_down"], color=[fc.LOBE_COLORS[l] for l in fc.LOBES], alpha=0.45, label="Decrease")
         ax.axhline(0, color="0.3", lw=0.8)
         ax.set_xticks(x, [l.capitalize() for l in fc.LOBES], rotation=30)
         ax.set_title(BANDS[band]); ax.spines[["top", "right"]].set_visible(False)
@@ -234,7 +332,7 @@ def main() -> None:
         for k, col in enumerate(["d_raw", "d_controlled"]):
             g = s.groupby("lobe")[col]; mu, se = g.mean().reindex(fc.LOBES), g.sem().reindex(fc.LOBES)
             ax.bar(x + (k - 0.5) * 0.38, mu, 0.36, yerr=se, color=[fc.LOBE_COLORS[l] for l in fc.LOBES],
-                   alpha=1 if k == 0 else 0.45, hatch=None if k == 0 else "//", capsize=2,
+                   alpha=1 if k == 0 else 0.45, capsize=2,
                    label="Raw" if k == 0 else "Covariates removed")
         for lb, g in s.groupby("lobe"):
             sst.append({"band": band, "lobe": lb, "n": len(g), "d_raw": g["d_raw"].mean(),
@@ -247,7 +345,7 @@ def main() -> None:
     sst = pd.DataFrame(sst); sst.to_csv(stem("sme_controlled_stats.csv"), index=False)
 
     pd.set_option("display.width", 200)
-    for name, t in [("variance shares", var), ("electrode direction", het), ("modulators (q<.05)", st[st.q < .05]),
+    for name, t in [("electrode reliability", rst), ("serial position time course", lst), ("variance shares", var), ("electrode direction", het), ("modulators (q<.05)", st[st.q < .05]),
                     ("recall ~ covariates", bst), ("SME raw vs controlled", sst)]:
         print(f"\n[{name}]\n{t.round(3).to_string(index=False)}")
 

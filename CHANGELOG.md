@@ -11,6 +11,8 @@ earlier than the last entry below is undocumented.
 
 - New `plot_variability.py` (-> `figures/variability/`): electrode direction (up / down per lobe), variance shares (between vs within subjects), trial modulators (serial position, list number, blank interval; per-subject OLS, BH-FDR), recall ~ covariates, SME raw vs covariates removed. Robust outlier trials dropped (10 MAD); catFR1 list -1 (unscored practice) and serial positions > 12 excluded; the blank of serial position 2 (first in the events; position 1 has no blank baseline) set to the session median.
 - Found: no trial-level artifact rejection in the pipeline. R1323T session 3 trial 90 (broadband transient ~5000x on 82 of 148 electrodes, 655 ms) makes the supramarginal-gyrus spike in Fig. 4B. Not yet fixed in the main pipeline.
+- `plot_variability.py` adds: electrode-pattern reliability across session halves and alpha vs high-gamma electrode coupling (`electrode_reliability.png`), the high-gamma time course for serial positions 2-4 vs 8-12 (`serialpos_timecourse.png`; outlier trials also by their whole-clip peak, which the 0-600 ms mean missed for R1323T's 655 ms transient); no hatching in any figure.
+- Proposal restructured: figures under their aims, power summary dropped, latency and network in Aim 1, a conclusion per aim; Aim 3 builds on DeHaan 2026 (thesis ch. 3: SME ~40% attenuated by serial position, item, list) instead of claiming it.
 - New `proposal/proposal.tex` (variability, task drivers, memory), reusing paper figures + the three new ones; `proposal/extra.bib` adds Correa 2006, Todorovic 2012, Brown 2006, Pinheiro-Chagas 2024 (check author list).
 
 ## 2026-11-03 — decoder: per-session AUC (DeHaan et al. 2025)
