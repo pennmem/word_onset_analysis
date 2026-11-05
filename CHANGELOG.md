@@ -7,6 +7,11 @@ earlier than the last entry below is undocumented.
 
 ---
 
+## 2026-11-05 — proposal refocused on the word response; variance-structure preliminaries
+
+- New `plot_variance_structure.py` (40 random subjects, ~1 min; -> `figures/variance_structure/`): nested variance partition (subject > electrode > session > trial) of the high-gamma response over time and of Cohen's d per frequency; k-means response types on spectral + high-gamma time profiles; alpha vs high gamma trial by trial per electrode vs across electrodes; gain vs latency (serial positions 8-12 vs 2-4); a single-trial carpet. Per-trial time-frequency power is not cached, so the full time x frequency x level partition needs a recompute.
+- Proposal rewritten short: memory on hold (DeHaan 2026 ch. 3), gap from Marks 2021 / Kucewicz 2019 / Burke 2014a; figures ordered by relevance with status tags; irrelevant figures removed (subject distributions, up/down bars, SME, decoder, connectivity reliability, network).
+
 ## 2026-11-04 — proposal draft; variability / trial-modulator preliminary results
 
 - New `plot_variability.py` (-> `figures/variability/`): electrode direction (up / down per lobe), variance shares (between vs within subjects), trial modulators (serial position, list number, blank interval; per-subject OLS, BH-FDR), recall ~ covariates, SME raw vs covariates removed. Robust outlier trials dropped (10 MAD); catFR1 list -1 (unscored practice) and serial positions > 12 excluded; the blank of serial position 2 (first in the events; position 1 has no blank baseline) set to the session median.

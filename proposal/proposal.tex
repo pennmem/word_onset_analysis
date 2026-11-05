@@ -1,223 +1,134 @@
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
 \usepackage{graphicx}
-\usepackage{amsmath}
 \usepackage[font=small,labelfont=bf]{caption}
 \usepackage{natbib}
 \usepackage[colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue]{hyperref}
 \setlength{\parskip}{4pt}
 
-\title{The word response is not constant: variability, task drivers and memory\\[2pt]
-\large Research proposal (draft)}
+\title{Sources of variability in the human word response\\[2pt]\large Research proposal (draft)}
 \author{Juee Naik}
 \date{\today}
 
 \begin{document}
 \maketitle
 
-\section*{Summary}
-Studies of free recall compare words that are later recalled with words that are forgotten, treating the
-response to the word itself as a constant that subtracts out. In 362 neurosurgical patients performing delayed
-free recall, the word response is not constant. It differs between electrodes of the same region in a way that
-replicates across sessions, its alpha and high-gamma components vary independently across electrodes, and from
-trial to trial it scales with where the word falls in the list. Serial position changes the size of the
-high-gamma response but not its timing. Because serial position and list number also predict recall, they
-account for much of the subsequent memory effect, as recently shown for the recall contrast itself
-\citep{DeHaan_2026}. We propose to characterize where the variability of the word response sits, what drives
-it from trial to trial, and which part of it carries information about later memory.
+\section*{Gap}
+Large iEEG studies of free recall describe the average response to a word: high gamma rises first in visual
+cortex and later in prefrontal cortex \citep{Burke_2014a,Kucewicz_2019}, and theta, alpha/beta and gamma power
+are induced at largely separate sites, in separate sequences \citep[``mosaic''; 139 subjects;][]{Marks_2021}.
+These studies average over trials and treat electrodes as samples of a region; \citet{Marks_2021} also
+normalize each trial within its own epoch rather than against a pre-word baseline. How much of the response
+differs between subjects, electrodes, sessions and trials, whether its spectral components are independent
+beyond space, and what changes it from trial to trial have not been measured. With 362 subjects, 1009 sessions
+and ${\sim}$300 words per session, this dataset can answer these questions. Memory effects are out of scope
+\citep[see][]{DeHaan_2026}.
 
-\section*{Background and gap}
-\textbf{Serial position and the subsequent memory effect.} High-frequency activity during encoding falls across
-serial positions regardless of later recall \citep[iEEG, encoding;][]{Serruya_2012}; posterior gamma predicts
-recall mainly for early items \citep[scalp EEG, encoding;][]{Sederberg_2006a}. Scalp EEG classifiers match
-recalled and forgotten words across serial positions \citep[encoding and retrieval;][]{Li_2024}, and in fMRI no
-signal predicts later memory once serial position and item are accounted for \citep[encoding;][]{Halpern_2023}.
-In 377 iEEG subjects, adjusting for serial position, item memorability and list number attenuates the subsequent
-memory effect by about 40\% across regions and frequencies, mostly through serial position
-\citep[encoding;][]{DeHaan_2026}. These studies model the recalled vs.\ forgotten contrast; none characterizes
-how the same factors change the response to the word itself, its timing, or the blank interval before it.
+\section*{Aims}
+\textbf{Aim 1. Where does the variability sit?} Partition the word response (word on vs.\ the blank before it)
+into subject, electrode, session and trial components per region, over time and frequency, and estimate how
+reliable each level is. \emph{Preliminary (40 subjects; Fig.~\ref{fig:var}):} single trials are dominated by
+trial-to-trial variation (71--94\% outside occipital cortex, 43\% in occipital high gamma). In the
+trial-averaged response, electrodes carry most of the variance in occipital cortex (${\sim}$60--70\%) and the
+subject share is largest in limbic regions and the hippocampus (20--30\%).
 
-\textbf{Blank interval.} Longer gaps before an item improve its recall \citep[behaviour;][]{Brown_2006}. A
-response after a longer wait can be larger because attention is directed to the expected moment
-\citep[scalp EEG, cued timing;][]{Correa_2006} or because it has recovered more from the previous stimulus;
-expected stimuli can also give smaller responses \citep[MEG, auditory;][]{Todorovic_2012}.
+\textbf{Aim 2. What is the stable part?} Describe the electrode-level structure: response types from each
+electrode's spectral and temporal profile, their anatomy and latency, and whether a type is a fixed property
+of an electrode across sessions. \emph{Preliminary:} five types emerge (Fig.~\ref{fig:types}), from
+broadband increases (34\% of occipital electrodes) to alpha/beta decreases with late high gamma and
+low-up/high-down profiles (frontal, parietal); an electrode's pattern replicates between session halves
+(Fig.~\ref{fig:elrel}; median $r$ = 0.90 occipital high gamma).
 
-\textbf{Heterogeneity.} High-frequency activity is suppressed in default-mode regions during tasks
-\citep[iEEG, visual search vs.\ rest;][]{Ossand_n_2011}, and sites within a region increase or decrease during
-arithmetic \citep[iEEG, arithmetic vs.\ rest;][]{PinheiroChagas_2024}. Heterogeneity alone is expected in
-visual cortex; what is not known is whether the electrode-level pattern of the word response is stable within a
-subject, whether its spectral components go together, and how large it is relative to differences between
-subjects.
+\textbf{Aim 3. Are the spectral components independent beyond space, and what moves them from trial to trial?}
+\citet{Marks_2021} found the bands separate across sites. \emph{Preliminary:} they are also independent trial by
+trial at the same electrode (Fig.~\ref{fig:coupling}; median $r$ between $-0.04$ and 0.06 in every lobe).
+Serial position scales the high-gamma response without shifting it (Figs.~\ref{fig:gain},~\ref{fig:sptime}),
+alpha habituates across lists (Fig.~\ref{fig:mod}), and the blank interval has small occipital effects
+(Fig.~\ref{fig:wait}) that can be tested against recovery from adaptation \citep{Groen_2022} vs.\ temporal
+expectation. Planned: single-trial latency, baseline vs.\ gain, and the same tests per response type.
 
-\section*{Data}
-FR1, catFR1 and pyFR (362 subjects, 1009 sessions). Each word (word on, 0--600 ms) is compared with the blank
-screen before it (word off, $-700$ to $-100$ ms; the first word of a list follows the countdown and is excluded).
-Bands: alpha (8--13 Hz, multitaper) and high gamma (70--150 Hz, Hilbert envelopes). Trial-level analyses drop
-robust outlier trials per electrode (\S Open issues).
+\section*{Open issues}
+\begin{itemize}\setlength{\itemsep}{0pt}
+\item Trial-level artifact rejection must be added to the main pipeline (one artifact trial distorts
+Fig.~\ref{fig:latency}); the preliminary analyses drop robust outlier trials.
+\item Per-trial time--frequency power is not cached (only alpha, high gamma and trial-averaged spectra), so the
+full time $\times$ frequency $\times$ level partition needs a recompute.
+\item The session share includes the sampling noise of each session mean; split-half reliability will
+separate it. Type names are read off one clustering run and are provisional.
+\end{itemize}
 
-\section*{Aim 1. Where and when does the word response vary?}
-\textbf{Between subjects and electrodes.} Subject distributions are wide in every region
-(Fig.~\ref{fig:subjects}). Splitting electrode-level Cohen's $d$ into between-subject and within-subject
-(between-electrode) parts, subjects account for only 12--37\% of the variance in high gamma and 25--36\% in
-alpha; most of it lies between electrodes of the same region in the same subject. Regions mix directions
-(Fig.~\ref{fig:direction}): 40\% of occipital electrodes increase in high gamma and 3\% decrease; in frontal
-cortex 5\% increase and 4\% decrease; in alpha, 21\% of occipital electrodes decrease and 11\% increase.
+\section*{Figures (most to least relevant)}
+Status in brackets: \emph{prelim.} = 40 random subjects; \emph{full} = all subjects; \emph{paper} = from the
+word-onset paper.
 
-\textbf{The electrode pattern is stable, and its two bands are independent.} Within a subject, the pattern of
-responses across a lobe's electrodes replicates between session halves (Fig.~\ref{fig:elrel}, left; median
-$r$ = 0.90 occipital, 0.59 parietal, 0.55 frontal high gamma; 0.20--0.80 for alpha), so the heterogeneity is not
-measurement noise. Across the same electrodes, alpha and high-gamma responses are essentially uncorrelated
-(right; median $r$ between $-0.10$ and 0.19): the alpha decrease and the high-gamma increase are not two readouts
-of one activation but separate signals with separate spatial patterns.
-
-\textbf{Timing and network.} High-gamma latency increases from lateral occipital cortex (${\sim}$120 ms) to
-orbitofrontal cortex (${\sim}$320 ms; Fig.~\ref{fig:latency}), with adjacent regions largely overlapping. Alpha
-synchronization hubs move from occipital to parietal to temporal regions over the first second
-(Fig.~\ref{fig:network}). Power changes are reliable within subjects across sessions, synchrony changes are not,
-and across subjects only the occipital connectivity profile replicates (Fig.~\ref{fig:reliability}).
-
-\textbf{Conclusion.} The word response is a stable, subject-specific pattern across electrodes rather than a
-regional average plus noise, with alpha and high gamma dissociated electrode by electrode. Its timing is ordered
-across regions and its network moves forward, but only the occipital network is reproducible across subjects.
-
-\textbf{Plan.} (1) Variance components (subject, electrode, session, trial) per region and time window.
-(2) Map increasing and decreasing electrodes in MNI space within regions (frontal eye fields and lateral
-prefrontal vs.\ other frontal cortex; ventral vs.\ dorsal occipital) and by recording type. (3) Test the
-alpha--high-gamma dissociation per electrode over time (does alpha lag high gamma where both respond?).
-(4) Electrode-level latency: is latency variability within a region larger than between regions?
-
-\begin{figure}[!ht]\centering
-\includegraphics[width=0.85\linewidth]{img/figS1_power_subjects.png}
-\caption{Word-onset power change per region, distributions across subjects.}
-\label{fig:subjects}
+\begin{figure}[!h]\centering
+\includegraphics[width=\linewidth]{img/variance_partition.png}
+\caption{[prelim.] Variance partition of the word response per lobe. Top: high-gamma response over time
+(trial-averaged per electrode-session; the trial-to-trial share of single trials in white). Bottom: response
+per frequency (Cohen's $d$, 11 bins 5--150 Hz). Subject (blue), electrode within subject (teal), session within
+electrode (yellow, including sampling noise).}
+\label{fig:var}
 \end{figure}
 
-\begin{figure}[!ht]\centering
-\includegraphics[width=0.9\linewidth]{img/electrode_direction.png}
-\caption{Fraction of electrodes whose power significantly increases (up) or decreases (down) at word onset
-(per session: Welch $t$ on log power, word on vs.\ word off, BH-FDR across the session's electrodes).}
-\label{fig:direction}
+\begin{figure}[!h]\centering
+\includegraphics[width=\linewidth]{img/response_types.png}
+\caption{[prelim.] Electrode response types (k-means on spectral and high-gamma time profiles of the more
+responsive half of electrodes): median (line) and interquartile range per type, and each lobe's composition.}
+\label{fig:types}
 \end{figure}
 
-\begin{figure}[!ht]\centering
+\begin{figure}[!h]\centering
+\includegraphics[width=0.75\linewidth]{img/alpha_hg_coupling.png}
+\caption{[prelim.] Alpha vs.\ high-gamma response: Pearson $r$ across trials at each electrode (red) and across
+electrodes within each subject (grey).}
+\label{fig:coupling}
+\end{figure}
+
+\begin{figure}[!h]\centering
 \includegraphics[width=0.95\linewidth]{img/electrode_reliability.png}
-\caption{(Left) Stability of the electrode pattern: per subject and lobe, Pearson $r$ across the lobe's
-electrodes between Cohen's $d$ in two halves of the subject's sessions (subjects with $\geq$2 sessions and
-$\geq$5 electrodes in the lobe). (Right) Per subject and lobe, Pearson $r$ across electrodes between alpha and
-high-gamma Cohen's $d$. Boxes across subjects; whiskers: central 95\%.}
+\caption{[full] Left: an electrode's response pattern replicates between session halves (per subject and
+lobe, $r$ across electrodes). Right: alpha vs.\ high-gamma Cohen's $d$ across electrodes.}
 \label{fig:elrel}
 \end{figure}
 
-\begin{figure}[!ht]\centering
-\includegraphics[width=0.85\linewidth]{img/fig4b_latency_fine.png}
-\caption{High-gamma half-max latency per anatomical region and the group response over time (from the
-word-onset paper). The spike at ${\sim}$650 ms in supramarginal gyrus is one artifact trial in one subject
-(\S Open issues).}
-\label{fig:latency}
+\begin{figure}[!h]\centering
+\includegraphics[width=0.5\linewidth]{img/gain_timing.png}
+\caption{[prelim.] Gain vs.\ timing: per responsive electrode, high-gamma peak ratio (late / early in the list)
+against the latency shift.}
+\label{fig:gain}
 \end{figure}
 
-\begin{figure}[!ht]\centering
-\includegraphics[width=\linewidth]{img/fig6c_epochs_alpha.png}
-\caption{Time-resolved alpha ciPLV network in 200 ms windows (from the word-onset paper): red (blue) nodes are
-regions whose mean change over their connections is above (below) zero.}
-\label{fig:network}
-\end{figure}
-
-\begin{figure}[!ht]\centering
-\includegraphics[width=0.9\linewidth]{img/fig8_reliability.png}
-\caption{Session-to-session reliability within subjects, and replicability across subjects (from the word-onset paper).}
-\label{fig:reliability}
-\end{figure}
-
-\clearpage
-\section*{Aim 2. What drives the word response from trial to trial?}
-\textbf{Preliminary.} Per subject and lobe, each trial's word-on power (log, z-scored within session) was
-regressed on serial position, list number and blank interval (Fig.~\ref{fig:modulators}). High gamma falls with
-serial position in every lobe (occipital $-0.042$ SD per SD of serial position, temporal $-0.032$, frontal
-$-0.020$; all $q < .05$, 254--339 subjects) and alpha rises (0.009--0.021), as reported for the recall contrast
-\citep{Serruya_2012,DeHaan_2026}. Alpha also rises across lists in most lobes. The serial-position effect is a
-change in gain, not timing (Fig.~\ref{fig:sptime}): the high-gamma peak is smaller for positions 8--12 than 2--4
-in every lobe (paired $p < .001$; frontal 0.41 vs.\ 0.30, hippocampus 0.32 vs.\ 0.21), while half-max latency
-does not change in any lobe after correction over lobes (all $p > .18$ except limbic, $p = .02$). The blank interval had small effects (occipital high gamma $+0.007$, frontal
-alpha $+0.006$), consistent with the occipital-specific effect after longer waits (Fig.~\ref{fig:wait}).
-Together the three variables explain 1--2\% of trial-to-trial variance.
-
-\textbf{Conclusion.} The word response is modulated by list structure: across a list it shrinks in high gamma
-and grows in alpha everywhere, without shifting in time, and it habituates across lists in alpha. Most
-trial-to-trial variation is not explained by these variables.
-
-\textbf{Plan.} (1) Time-resolved and latency effects per region and electrode. (2) Separate expectation from
-recovery after the previous word: the previous word's response size and offset time as covariates, a hazard-rate
-vs.\ an adaptation model, and experiments with other timing (RepFR1, ltpFR2). (3) Whether serial-position effects
-shrink over lists and sessions. (4) Pre-stimulus alpha and high gamma as predictors of the unexplained variance.
-
-\begin{figure}[!ht]\centering
-\includegraphics[width=\linewidth]{img/trial_modulators.png}
-\caption{Word-on power (z within session) by serial position, list number and blank interval (quantile bins);
-mean $\pm$ SEM across subjects per lobe. Serial positions 2--12; scored lists only.}
-\label{fig:modulators}
-\end{figure}
-
-\begin{figure}[!ht]\centering
+\begin{figure}[!h]\centering
 \includegraphics[width=\linewidth]{img/serialpos_timecourse.png}
-\caption{High-gamma response of responsive electrodes for serial positions 2--4 (dark) and 8--12 (light);
-mean $\pm$ SEM across subjects.}
+\caption{[full] High-gamma response for serial positions 2--4 (dark) and 8--12 (light): smaller, not later.}
 \label{fig:sptime}
 \end{figure}
 
-\begin{figure}[!ht]\centering
-\includegraphics[width=0.8\linewidth]{img/fig9_anticipation.png}
-\caption{Occipital high-gamma response after long vs.\ short waits (from the word-onset paper).}
+\begin{figure}[!h]\centering
+\includegraphics[width=0.6\linewidth]{img/carpet_example.png}
+\caption{[prelim.] Single-trial high gamma of one occipital electrode, trials sorted by serial position.}
+\label{fig:carpet}
+\end{figure}
+
+\begin{figure}[!h]\centering
+\includegraphics[width=\linewidth]{img/trial_modulators.png}
+\caption{[full] Word-on power by serial position, list number and blank interval per lobe.}
+\label{fig:mod}
+\end{figure}
+
+\begin{figure}[!h]\centering
+\includegraphics[width=0.7\linewidth]{img/fig9_anticipation.png}
+\caption{[paper] Occipital high gamma after long vs.\ short blank intervals.}
 \label{fig:wait}
 \end{figure}
 
-\clearpage
-\section*{Aim 3. Which part of the word response carries information about memory?}
-\textbf{Preliminary.} Serial position and list number predict recall (logistic $\beta = -0.19$ and $-0.09$ per
-SD, 361 subjects, both $p < 10^{-6}$); the blank interval does not ($p = .47$). Removing serial position (linear
-and positions 2--3), list number and blank interval from each trial's response (Fig.~\ref{fig:sme}) reduced the
-high-gamma subsequent memory effect from $d = 0.030$ to 0.014 in frontal cortex, 0.020 to 0.001 in temporal
-cortex, 0.014 to 0.001 in the hippocampus, and 0.098 to 0.067 in occipital cortex (paired $t$, all
-$p < .01$), in line with \citet{DeHaan_2026}. Time-resolved decoding of the response predicts recall weakly
-in every lobe (Fig.~\ref{fig:recall}).
-
-\textbf{Conclusion.} Within the word response, the part that predicts memory is largely the part that follows
-list structure; the effect that survives adjustment is concentrated in occipital cortex.
-
-\textbf{Plan.} (1) Decode recall from the response with covariates removed and with recalled and forgotten words
-matched on serial position and list \citep[as][]{Li_2024}, time-resolved, to ask when the surviving signal
-appears. (2) Ask whether the surviving signal is a scaled version of the word response (the same electrodes and
-timing) or a different pattern, using the stable electrode patterns of Aim 1. (3) Compare electrodes suppressed
-and activated at word onset in frontal cortex. (4) Test whether the blank interval affects recall of the next or
-the current word and whether the word response mediates it.
-
-\begin{figure}[!ht]\centering
-\includegraphics[width=0.9\linewidth]{img/sme_controlled.png}
-\caption{Subsequent memory effect (Cohen's $d$, recalled vs.\ not recalled, word on 0--600 ms) per lobe, raw
-(dark) and after regressing each trial's response on serial position, list number and blank interval within
-subject (light); mean $\pm$ SEM across subjects.}
-\label{fig:sme}
-\end{figure}
-
-\begin{figure}[!ht]\centering
-\includegraphics[width=0.9\linewidth]{img/fig7_recall_time.png}
-\caption{Recall prediction from the high-gamma response (encoding contrast; per-session AUC, mean $\pm$ SEM
-across subjects; from the word-onset paper).}
-\label{fig:recall}
+\begin{figure}[!h]\centering
+\includegraphics[width=0.75\linewidth]{img/fig4b_latency_fine.png}
+\caption{[paper] High-gamma latency per region (the supramarginal spike at 650 ms is one artifact trial).}
+\label{fig:latency}
 \end{figure}
 
 \clearpage
-\section*{Open issues and extensions}
-\begin{itemize}\setlength{\itemsep}{0pt}
-\item \textbf{Artifact trials.} The main pipeline has no trial-level artifact rejection: one trial in one subject
-(a broadband transient on 82 of 148 electrodes at 655 ms) produces the supramarginal spike in
-Fig.~\ref{fig:latency}. The preliminary results here drop robust outlier trials; the main analyses need the same.
-\item \textbf{Serial position 1} is excluded by the baseline design; primacy is measured from position 2.
-\item \textbf{Blank intervals} span only a few hundred ms; experiments with other timing would extend Aim 2.
-\item \textbf{Eye tracking} during word presentation (the Kucewicz datasets) would separate visual input
-(fixations, saccades) from the word response.
-\end{itemize}
-
 \bibliographystyle{apalike}
 \bibliography{../paper/refs,extra}
 \end{document}
