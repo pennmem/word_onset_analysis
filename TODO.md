@@ -17,6 +17,31 @@
 - Lenth_2025 (emmeans): cited as R package v1.10.3 (installed version); update the year/version if re-run.
 - Supplementary table (ADD): anatomical label -> 12-region mapping (region_to_burke_lobe.csv).
 
+## Proposal (variability of the word response): to confirm
+Status 2026-11-05. Memory analyses on hold (DeHaan 2026 thesis ch. 3 covers task structure in the SME);
+connectivity stays out of the proposal (Mike decides what goes in the paper).
+- **Trial-level artifact rejection in the main pipeline** (one R1323T trial makes the supramarginal spike
+  in Fig. 4B; affects every analysis) -> rerun all analyses and simulations. Preliminaries already drop
+  robust outliers (window mean and whole-clip peak, 10 MAD).
+- **Latency reliability** (re-added; was not in the file): does an electrode's half-max latency replicate
+  between session halves, as the amplitude pattern does (r up to 0.90)?
+- Variance partition (plot_variance_structure.py, 40 subjects): run on the full cohort; split-half
+  reliability to separate the session share from each session mean's sampling noise; the full
+  time x frequency x level partition needs per-trial time-frequency power (not cached -> recompute).
+- Response types: choose K, run full cohort, re-read the provisional names; anatomy (MNI) and latency per type.
+- Alpha vs high gamma trial by trial (r ~ 0): full cohort; check a shared broadband / aperiodic shift
+  does not drive it; extends Marks 2021 (site-level, trial-averaged, within-epoch z, no baseline).
+- Gain vs timing: single-trial latency (template / cross-correlation), not early-vs-late averages.
+- Blank interval (plot_blank_interval.py): occipital high gamma rises with blank length (FR1 gradual,
+  pyFR flat 800-1050 then a step up; all 37 pyFR subjects span the range) -> fit hazard-rate
+  (expectation) vs recovery-from-adaptation models (Groen 2022). Short blanks: occipital high-gamma
+  baseline slightly up and alpha baseline down (previous word's offset in the -700..-100 window)
+  -> report; the response measures use the session-mean baseline. Previous word's response predicts
+  the next positively (beta 0.08-0.30 with serial position controlled) = slow state, not adaptation;
+  control list-level drift before interpreting.
+- Paper: cite and differentiate Kucewicz et al. 2019 (same data, 165 subjects, high-gamma latency
+  gradient) and Marks et al. 2021.
+
 ## Reliability (final analysis of the paper, per PI)
 - Done (2026-10-14, plot_reliability.py): test-retest as riley-thesis
   compute_retest_reliability.py (random session halves, >= 2 sessions per half, >= 10 regions,
@@ -44,9 +69,8 @@
 
 ## Recall decoding (plot_decoding.py)
 - Current: encoding contrast, high gamma per lobe x 100 ms window, >= 5 electrodes per lobe,
-  stars AUC > 0.5 (permutation chance 0.493 reported only).
-- **Hyperparameter tuning**: nested CV over the L2 strength C per subject (now fixed at the
-  lab's 7.2e-4, ram_utils / Ezzyat et al. 2017).
+  >= 3 sessions per montage. On hold with the memory analyses.
+- Done (2026-11-03): per-session AUC vs 0.5, nested CV over C, per montage (DeHaan et al. 2025).
 - Check whether the small above-chance recall information at word onset (frontal / parietal,
   vs the permutation level) is serial-position / encoding-state drift (add serial position).
 

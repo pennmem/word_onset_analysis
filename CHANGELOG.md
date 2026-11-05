@@ -10,6 +10,8 @@ earlier than the last entry below is undocumented.
 ## 2026-11-05 — proposal refocused on the word response; variance-structure preliminaries
 
 - New `plot_variance_structure.py` (40 random subjects, ~1 min; -> `figures/variance_structure/`): nested variance partition (subject > electrode > session > trial) of the high-gamma response over time and of Cohen's d per frequency; k-means response types on spectral + high-gamma time profiles; alpha vs high gamma trial by trial per electrode vs across electrodes; gain vs latency (serial positions 8-12 vs 2-4); a single-trial carpet. Per-trial time-frequency power is not cached, so the full time x frequency x level partition needs a recompute.
+- New `plot_blank_interval.py` (full cohort, ~1 min; -> `figures/blank_interval/`): response and own baseline by blank length per design (50 ms bins), high-gamma time course by blank tercile, previous word's response and blank length as predictors (serial position controlled).
+- TODO: new "Proposal: to confirm" section (incl. the latency-reliability item, which was never in the file); decoder TODO updated.
 - Proposal rewritten short: memory on hold (DeHaan 2026 ch. 3), gap from Marks 2021 / Kucewicz 2019 / Burke 2014a; figures ordered by relevance with status tags; irrelevant figures removed (subject distributions, up/down bars, SME, decoder, connectivity reliability, network).
 
 ## 2026-11-04 — proposal draft; variability / trial-modulator preliminary results
