@@ -6,6 +6,9 @@ Per trial and electrode: the response = word-on minus the electrode-session mean
 Outlier trials dropped per electrode (whole-clip peak or window mean > OUTLIER_MAD x MAD).
 
   1. Variance partition (nested method of moments: subject > electrode > session > trial) per lobe,
+     the trial share split into task structure (task_design: serial position, list number, blank
+     length, same category as the previous word; fit per electrode-session, chance fit of the k
+     regressors removed as in adjusted R^2) and the rest,
      for the high-gamma response over time (50 ms bins), and per band for the window mean;
      over frequency at electrode-session level (Cohen's d per spectrum bin; subject > electrode > session).
   2. Response types: k-means (K_TYPES) on each electrode's spectral profile (Cohen's d, 11 bins
@@ -47,6 +50,22 @@ def robust_ok(v: np.ndarray) -> np.ndarray:
     """(E, C) True where the trial is not a robust outlier of its electrode."""
     med = np.nanmedian(v, 0); mad = np.nanmedian(np.abs(v - med), 0) * 1.4826
     return np.abs(v - med) <= OUTLIER_MAD * mad
+
+
+def task_design(w: pd.DataFrame, blank: np.ndarray) -> np.ndarray:
+    """(trials, k) task-structure regressors within a session: serial position (dummies), list number
+    (z, z^2), blank length (z; the first word in the events has none: session median), same category as
+    the previous word (catFR1; 0 elsewhere), intercept."""
+    sp = w["serialpos"].to_numpy(int)
+    lst = w["trial"].to_numpy(float); lz = (lst - lst.mean()) / (lst.std() or 1)
+    b = np.where(np.isfinite(blank), blank, np.nanmedian(blank)); bz = (b - b.mean()) / (b.std() or 1)
+    cat = w["category"].astype(str).to_numpy() if "category" in w else None
+    same = np.zeros(len(w))
+    if cat is not None:
+        prev = np.r_[[""], cat[:-1]]
+        same = ((cat == prev) & (np.r_[[np.nan], lst[:-1]] == lst)).astype(float)
+    dum = (sp[:, None] == np.unique(sp)[None, 1:]).astype(float)
+    return np.c_[dum, lz, lz ** 2, bz, same, np.ones(len(w))]
 
 
 def partition(df: pd.DataFrame, col: str, levels=LEVELS) -> dict:
@@ -100,6 +119,20 @@ def main() -> None:
         sp = w["serialpos"].to_numpy(float) if len(w) == len(yg) else np.full(len(yg), np.nan)
         edges = np.arange(0, 1000 + 1e-9, BIN_MS)
         xb = np.stack([np.nanmean(x[..., (t >= e0) & (t < e0 + BIN_MS)], -1) for e0 in edges[:-1]], -1)   # (E, C, B)
+        X = task_design(w, np.asarray(g["blank_ms_hi"], float)) if len(w) == len(yg) else None
+        Y = np.concatenate([ya[..., None], yg[..., None], xb], -1)   # (E, C, 2 + B): alpha, high gamma, time bins
+        fit = np.full(Y.shape, np.nan)
+        task_adj = np.full((Y.shape[1], 2), np.nan)   # per electrode: task variance, alpha / high gamma
+        if X is not None:   # task structure, per electrode: least squares on its clean trials
+            k = X.shape[1] - 1
+            for c in range(Y.shape[1]):
+                v = np.isfinite(Y[:, c]).all(1)
+                if v.sum() > X.shape[1] + 10:
+                    fit[v, c] = X[v] @ np.linalg.lstsq(X[v], Y[v, c], rcond=None)[0]
+                    # variance of the fit minus what k regressors fit from noise alone (adjusted R^2)
+                    vf, vr = fit[v, c, :2].var(0), (Y[v, c, :2] - fit[v, c, :2]).var(0)
+                    task_adj[c] = np.maximum(vf - vr * k / (v.sum() - k - 1), 0)
+        res = Y - fit
         resp = responsive(g)
         for c in np.flatnonzero(lobe != None):  # noqa: E711
             lab = str(g["labels"][c])
@@ -108,12 +141,16 @@ def main() -> None:
                               "lobe": lobe[c], "alpha": ya[e, c], "high_gamma": yg[e, c]})
             for k, e0 in enumerate(edges[:-1]):
                 d[f"t{int(e0)}"] = xb[e, c, k]
+            d["task_alpha"], d["task_high_gamma"] = fit[e, c, 0], fit[e, c, 1]
             trial_rows.append(d)
             ok2 = np.isfinite(ya[:, c]) & np.isfinite(yg[:, c])
             el_rows.append({"subject": sub, "electrode": f"{sub}|{lab}", "session": sess, "lobe": lobe[c],
                             "label": lab, "responsive": bool(resp[c]),
                             "r_trial": np.corrcoef(ya[ok2, c], yg[ok2, c])[0, 1] if ok2.sum() > 20 else np.nan,
+                            "r_resid": (np.corrcoef(res[ok3, c, 0], res[ok3, c, 1])[0, 1]
+                                        if (ok3 := np.isfinite(res[:, c, :2]).all(1)).sum() > 20 else np.nan),
                             "d_alpha": a["cohens_d"][c], "d_hg": g["cohens_d"][c],
+                            "task_alpha": task_adj[c, 0], "task_high_gamma": task_adj[c, 1],
                             **{f"f{i}": v for i, v in enumerate(s["cohens_d_freq"][c])},
                             **{f"b{i}": v for i, v in enumerate(g["cohens_d_bins"][c])}})
             if resp[c]:
@@ -146,7 +183,9 @@ def main() -> None:
         sh = sh / sh.sum(1, keepdims=True)
         axes[0, j].stackplot(tc, sh.T, colors=[LEVEL_COLORS[L] for L in L3], labels=L3, lw=0)
         p4 = partition(d.dropna(subset=["high_gamma"]), "high_gamma")
-        axes[0, j].text(0.97, 0.03, f"single trials: {p4['trial'] / sum(p4.values()):.0%} trial-to-trial",
+        task = E.loc[E["lobe"] == lb, "task_high_gamma"].mean() / sum(p4.values())
+        axes[0, j].text(0.97, 0.03, f"single trials: {p4['trial'] / sum(p4.values()):.0%} trial-to-trial "
+                        f"({task:.1%} task structure)",
                         transform=axes[0, j].transAxes, ha="right", va="bottom", fontsize=7, color="w")
         axes[0, j].set_title(f"{lb.capitalize()} (n={d['subject'].nunique()})", color=fc.LOBE_COLORS[lb])
         axes[0, j].set_xlabel("Time after word onset (ms)")
@@ -162,8 +201,10 @@ def main() -> None:
     axes[1, 0].set_ylabel("Share of variance\nresponse per frequency (Cohen's d)")
     axes[0, 0].legend(frameon=False, fontsize=8, loc="lower left")
     fig.tight_layout(); fig.savefig(join(args.out_dir, "variance_partition.png"), dpi=200); plt.close(fig)
-    band = pd.DataFrame([{"lobe": lb, "band": b, **partition(T[T["lobe"] == lb].dropna(subset=[b]), b)}
+    band = pd.DataFrame([{"lobe": lb, "band": b, **partition(T[T["lobe"] == lb].dropna(subset=[b]), b),
+                          "task": E.loc[E["lobe"] == lb, f"task_{b}"].mean()}
                          for lb in fc.LOBES for b in ("alpha", "high_gamma") if (T["lobe"] == lb).any()])
+    band["trial"] -= band["task"]   # the trial share split into task structure and the rest
     band.to_csv(join(args.out_dir, "variance_partition_bands.csv"), index=False)
 
     # 2. response types
@@ -209,16 +250,17 @@ def main() -> None:
     fig.tight_layout(); fig.savefig(join(args.out_dir, "response_types.png"), dpi=200); plt.close(fig)
 
     # 3. alpha vs high gamma: trial by trial vs across electrodes
-    er = E.groupby(["electrode", "lobe"], as_index=False)["r_trial"].mean()
+    er = E.groupby(["electrode", "lobe"], as_index=False)[["r_trial", "r_resid"]].mean()
     ae = E.groupby(["subject", "lobe", "electrode"], as_index=False)[["d_alpha", "d_hg"]].mean()
     acr = pd.DataFrame([{"lobe": lb, "r": np.corrcoef(g["d_alpha"], g["d_hg"])[0, 1]}
                         for (s_, lb), g in ae.groupby(["subject", "lobe"]) if len(g) >= 5])
     fig, ax = plt.subplots(figsize=(8, 3.8))
     x0 = np.arange(len(fc.LOBES))
     for k, (dd, lab, col) in enumerate(((er.rename(columns={"r_trial": "r"}), "Trial by trial (per electrode)", "C3"),
+                                        (er.rename(columns={"r_resid": "r"}), "Trial by trial, task structure removed", "C1"),
                                         (acr, "Across electrodes (per subject)", "0.5"))):
-        ax.boxplot([dd.loc[dd["lobe"] == l, "r"].dropna() for l in fc.LOBES], positions=x0 + (k - 0.5) * 0.38,
-                   widths=0.32, patch_artist=True, showfliers=False, whis=(2.5, 97.5),
+        ax.boxplot([dd.loc[dd["lobe"] == l, "r"].dropna() for l in fc.LOBES], positions=x0 + (k - 1) * 0.27,
+                   widths=0.23, patch_artist=True, showfliers=False, whis=(2.5, 97.5),
                    boxprops=dict(facecolor=col, alpha=0.6), medianprops=dict(color="0.15"))
         ax.plot([], [], "s", color=col, alpha=0.6, ms=9, label=lab)
     ax.axhline(0, color="0.5", lw=0.8); ax.set_xticks(x0, [l.capitalize() for l in fc.LOBES], rotation=30)
@@ -260,9 +302,10 @@ def main() -> None:
         fig.tight_layout(); fig.savefig(join(args.out_dir, "carpet_example.png"), dpi=200); plt.close(fig)
 
     pd.set_option("display.width", 200)
-    print("\n[variance shares, window mean]\n", band.assign(**{L: band[L] / band[LEVELS].sum(1) for L in LEVELS}).round(3).to_string(index=False))
+    print("\n[variance shares, window mean]\n", band.assign(**{L: band[L] / band[LEVELS + ["task"]].sum(1) for L in LEVELS + ["task"]}).round(3).to_string(index=False))
     print("\n[response types per lobe]\n", comp.round(2).to_string())
     print("\n[alpha-hg r] trial median by lobe:", er.groupby("lobe")["r_trial"].median().round(3).to_dict())
+    print("            task removed:", er.groupby("lobe")["r_resid"].median().round(3).to_dict())
     print("            across electrodes:", acr.groupby("lobe")["r"].median().round(3).to_dict())
     print("\n[gain-timing] median dgain, dlat by lobe:\n", G.groupby("lobe")[["dgain", "dlat"]].median().round(2).to_string())
 

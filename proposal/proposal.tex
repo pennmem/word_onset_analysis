@@ -28,7 +28,9 @@ and ${\sim}$300 words per session, this dataset can answer these questions. Memo
 \textbf{Aim 1. Where does the variability sit?} Partition the word response (word on vs.\ the blank before it)
 into subject, electrode, session and trial components per region, over time and frequency, and estimate how
 reliable each level is. \emph{Preliminary (40 subjects; Fig.~\ref{fig:var}):} single trials are dominated by
-trial-to-trial variation (71--94\% outside occipital cortex, 43\% in occipital high gamma). In the
+trial-to-trial variation (71--94\% outside occipital cortex, 43\% in occipital high gamma), of which task
+structure (serial position, list number, blank length, same category as the previous word) explains only
+3--7\% of the variance once its chance fit is removed. In the
 trial-averaged response, electrodes carry most of the variance in occipital cortex (${\sim}$60--70\%) and the
 subject share is largest in limbic regions and the hippocampus (20--30\%).
 
@@ -41,7 +43,8 @@ low-up/high-down profiles (frontal, parietal); an electrode's pattern replicates
 
 \textbf{Aim 3. Are the spectral components independent beyond space, and what moves them from trial to trial?}
 \citet{Marks_2021} found the bands separate across sites. \emph{Preliminary:} they are also independent trial by
-trial at the same electrode (Fig.~\ref{fig:coupling}; median $r$ between $-0.04$ and 0.06 in every lobe).
+trial at the same electrode (Fig.~\ref{fig:coupling}; median $r$ between $-0.04$ and 0.06 in every lobe,
+unchanged with task structure removed).
 Serial position scales the high-gamma response without shifting it (Figs.~\ref{fig:gain},~\ref{fig:sptime}),
 alpha habituates across lists (Fig.~\ref{fig:mod}), and the blank interval has small occipital effects
 (Fig.~\ref{fig:wait}) that can be tested against recovery from adaptation \citep{Groen_2022} vs.\ temporal
@@ -64,7 +67,7 @@ word-onset paper.
 \begin{figure}[!h]\centering
 \includegraphics[width=\linewidth]{img/variance_partition.png}
 \caption{[prelim.] Variance partition of the word response per lobe. Top: high-gamma response over time
-(trial-averaged per electrode-session; the trial-to-trial share of single trials in white). Bottom: response
+(trial-averaged per electrode-session; the trial-to-trial and task-structure shares of single trials in white). Bottom: response
 per frequency (Cohen's $d$, 11 bins 5--150 Hz). Subject (blue), electrode within subject (teal), session within
 electrode (yellow, including sampling noise).}
 \label{fig:var}
@@ -79,8 +82,8 @@ responsive half of electrodes): median (line) and interquartile range per type, 
 
 \begin{figure}[!h]\centering
 \includegraphics[width=0.75\linewidth]{img/alpha_hg_coupling.png}
-\caption{[prelim.] Alpha vs.\ high-gamma response: Pearson $r$ across trials at each electrode (red) and across
-electrodes within each subject (grey).}
+\caption{[prelim.] Alpha vs.\ high-gamma response: Pearson $r$ across trials at each electrode (red), the same
+with task structure regressed out (orange), and across electrodes within each subject (grey).}
 \label{fig:coupling}
 \end{figure}
 

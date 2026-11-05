@@ -39,6 +39,11 @@ connectivity stays out of the proposal (Mike decides what goes in the paper).
   -> report; the response measures use the session-mean baseline. Previous word's response predicts
   the next positively (beta 0.08-0.30 with serial position controlled) = slow state, not adaptation;
   control list-level drift before interpreting.
+- Task structure as a variance component (task_design in plot_variance_structure.py: serial position,
+  list number, blank length, same category as previous word; adjusted for chance fit): 3-7% of single-trial
+  variance. Still to add: experiment (FR1 / catFR1 / pyFR) as a level or covariate (list length, timing
+  differ -> could pose as subject differences), item identity / word properties, and the same control in
+  the blank-interval and previous-word analyses (list-level drift).
 - Paper: cite and differentiate Kucewicz et al. 2019 (same data, 165 subjects, high-gamma latency
   gradient) and Marks et al. 2021.
 
