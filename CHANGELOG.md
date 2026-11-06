@@ -7,6 +7,25 @@ earlier than the last entry below is undocumented.
 
 ---
 
+## 2026-11-05 — variance structure as one mixed model; boxplots with dots
+
+- `mixed_models.R variance` (run by `plot_variance_structure.py`): per lobe and band, DeHaan 2026 ch. 3's random-intercept model on the single-trial response: subject, electrode, electrode x session, serial position, electrode x serial position, list, session x list, word (item), word presentation (shared by a lobe's electrodes), blank length + same category (fixed). Replaces the method-of-moments `partition`, the OLS `task_design` and its chance-fit correction; the time / frequency subject-electrode-session shares use the same model on electrode-session means.
+- Serial position is a factor (positions 2-12) everywhere: the 2-4 vs 8-12 split is gone; size vs timing = peak and half-max latency per position, per subject (`serialpos_size_timing.png`). New `task_effects.png` (model estimates per serial position and list) replaces `trial_modulators.png`.
+- Removed: the carpet example; the "task structure removed" coupling box; from `plot_variability.py` the alpha-vs-high-gamma d panel (duplicate of the coupling figure), the early/late serial-position time course, electrode direction, variance shares and the trial-modulator section (superseded). It keeps electrode-pattern stability and the (on-hold) memory analyses.
+- Quick preliminary fit: at most 5 random electrodes per subject and lobe (`LMM_MAX_ELECTRODES`; the full fit ran > 20 min); single-trial fits rerun only when missing or with `--refit`; `mixed_models.R levels` (cheap) always.
+- Variance components shown as stacked shares per lobe (all terms sum to 100%; task terms grouped; n subjects / electrodes per lobe). The separate trial-averaged subject / electrode / session split and `mixed_models.R levels` are removed (its levels are segments of the same bars).
+- Blank length in `plot_variance_structure.py` measured on all words before masking, so serial position 2 gets its real blank (after position 1) instead of the session median; the quick model refit.
+- Response types figure and code removed (the coupling figure with stats answers whether alpha and high-gamma responses sit at the same electrodes; prevalence numbers kept in the proposal text). Electrode-stability axis relabelled.
+- Alpha vs high gamma: per lobe, subjects' mean Fisher z vs 0 (one-sample t) for the across-trial and across-electrode r, BH-FDR over 12 tests; marked above the boxes.
+- Size vs timing by serial position removed (its peak panel repeated the task-effects curve): single-trial high-gamma half-max latency (responsive electrodes) is now a third measure in the same mixed model, so its variance components and serial-position / list estimates sit next to alpha and high-gamma power. The model output records n subjects / electrodes per fit.
+- Response types: k-means on 5-150 Hz profiles replaced by a rule: alpha and high gamma each up / none / down per electrode (paired t over trials pooled across sessions, BH-FDR 0.05), 3 x 3 fractions per lobe with the ratio to independence. The spectrum pickles are no longer read.
+- Proposal: Aims rewritten on the model results; figures reordered (components, trial-averaged split, types, coupling, stability, task effects, size/timing, paper figs); unused images removed.
+- New `fc.box_dots`: boxes with every value as a dot; used by the coupling, stability, serial-position and paper reliability (`plot_reliability.py`, fig 8) figures.
+
+## 2026-11-05 — response-type and gain/timing figures redrawn
+
+- `plot_variance_structure.py`: response types: profiles compact (shared y), coloured by type to match a larger lobe-composition panel. Gain vs timing: the per-electrode scatter replaced by boxplots per lobe of each subject's median peak change and half-max latency change (positions 8-12 vs 2-4). Proposal captions updated.
+
 ## 2026-11-05 — proposal refocused on the word response; variance-structure preliminaries
 
 - New `plot_variance_structure.py` (40 random subjects, ~1 min; -> `figures/variance_structure/`): nested variance partition (subject > electrode > session > trial) of the high-gamma response over time and of Cohen's d per frequency; k-means response types on spectral + high-gamma time profiles; alpha vs high gamma trial by trial per electrode vs across electrodes; gain vs latency (serial positions 8-12 vs 2-4); a single-trial carpet. Per-trial time-frequency power is not cached, so the full time x frequency x level partition needs a recompute.

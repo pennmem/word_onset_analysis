@@ -5,7 +5,7 @@ and high gamma. As riley-thesis compute_retest_reliability.py (its channel-level
 each subject's sessions split at random into two halves (seed 0), >= MIN_SESS_PER_HALF
 sessions per half; per session, d averaged per anatomical region (reg_full), then sessions
 averaged within each half; test-retest = Pearson r across the subject's regions between the
-halves (>= MIN_FINITE regions); box plots of the subjects' r (whiskers: central 95%),
+halves (>= MIN_FINITE regions); box plots of the subjects' r with every subject as a dot (whiskers: central 95%),
 median [IQR] printed; dotted: the no-coupling
 simulation's median (results/simulations/hg_null), when present. Synchrony (alpha ciPLV, high-gamma AEC-c;
 word on - word off): the same on hub strength (fc.electrode_sync: each electrode's mean
@@ -137,8 +137,7 @@ def main() -> None:
     for xi, k, col in zip(x, labels, ("C0", "C3", "C0", "C3")):
         v = rt[k].dropna().to_numpy()
         if len(v):   # subjects; whiskers: central 95%, as the replicability boxes
-            ax.boxplot([v], positions=[xi], widths=0.6, patch_artist=True, showfliers=False, whis=(2.5, 97.5),
-                       boxprops=dict(facecolor=col, alpha=0.6), medianprops=dict(color="0.15"))
+            fc.box_dots(ax, [v], [xi], [col], width=0.6, whis=(2.5, 97.5))
         if null is not None:
             ax.plot([xi - 0.3, xi + 0.3], [null[k].median()] * 2, color="0.4", ls=":", lw=1.5)
     ax.axhline(0, color="0.5", lw=0.8)
@@ -150,10 +149,9 @@ def main() -> None:
     ax, x = axes[1], np.arange(len(fc.LOBES))
     for k, ((_, label), col) in enumerate(zip(SYNC.values(), ("C0", "C3"))):
         r = rep[rep["measure"] == label]
-        ax.boxplot([r.loc[r["lobe"] == l, "r"] for l in fc.LOBES], positions=x + (k - 0.5) * 0.38,
-                   widths=0.32, patch_artist=True, showfliers=False, whis=(2.5, 97.5),
-                   boxprops=dict(facecolor=col, alpha=0.6), medianprops=dict(color="0.15"))
-        ax.plot([], [], "s", color=col, alpha=0.6, ms=9, label=label)
+        fc.box_dots(ax, [r.loc[r["lobe"] == l, "r"] for l in fc.LOBES], x + (k - 0.5) * 0.38,
+                    [col] * len(fc.LOBES), width=0.32, whis=(2.5, 97.5))
+        ax.plot([], [], "s", color=col, alpha=0.5, ms=9, label=label)
     ax.axhline(0, color="0.5", lw=0.8)
     ax.set_xticks(x, [l.capitalize() for l in fc.LOBES], rotation=30)
     ax.set_ylim(top=1)

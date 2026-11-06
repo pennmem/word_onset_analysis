@@ -645,6 +645,27 @@ def _roi_axis_furniture(
         ax.spines[sp].set_visible(False)
 
 
+def box_dots(ax: Any, data: Sequence[Any], positions: Sequence[float], colors: Sequence[Any],
+             width: float = 0.6, whis: Any = 1.5, seed: int = 0) -> None:
+    """Median/IQR boxes with every value as a jittered dot (roi_panel's style); dot size and
+    alpha shrink as n grows. Empty groups are skipped."""
+    rng = np.random.default_rng(seed)
+    keep = [i for i, v in enumerate(data) if len(v)]
+    if not keep:
+        return
+    bp = ax.boxplot([np.asarray(data[i], float) for i in keep], positions=[positions[i] for i in keep],
+                    widths=width, whis=whis, showfliers=False, patch_artist=True,
+                    medianprops=dict(color="0.15", lw=1.6), whiskerprops=dict(color="0.45", lw=1.0),
+                    capprops=dict(color="0.45", lw=1.0))
+    for patch, i in zip(bp["boxes"], keep):
+        patch.set(facecolor=colors[i], alpha=0.35, edgecolor=colors[i], linewidth=1.2)
+    for i in keep:
+        v = np.asarray(data[i], float)
+        s, a = (9, 0.6) if v.size <= 60 else (4, 0.3) if v.size <= 600 else (1.5, 0.12)
+        ax.scatter(positions[i] + rng.uniform(-width / 3, width / 3, v.size), v, s=s, color=colors[i],
+                   alpha=a, linewidths=0, zorder=3)
+
+
 def roi_panel(
     ax: Any, tbl: pd.DataFrame, measure: str, rng: Any,
     roi_order: Sequence[str] = tuple(ROI_ORDER),

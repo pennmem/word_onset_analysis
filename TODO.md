@@ -25,13 +25,20 @@ connectivity stays out of the proposal (Mike decides what goes in the paper).
   robust outliers (window mean and whole-clip peak, 10 MAD).
 - **Latency reliability** (re-added; was not in the file): does an electrode's half-max latency replicate
   between session halves, as the amplitude pattern does (r up to 0.90)?
-- Variance partition (plot_variance_structure.py, 40 subjects): run on the full cohort; split-half
-  reliability to separate the session share from each session mean's sampling noise; the full
-  time x frequency x level partition needs per-trial time-frequency power (not cached -> recompute).
-- Response types: choose K, run full cohort, re-read the provisional names; anatomy (MNI) and latency per type.
+- Variance components (plot_variance_structure.py -> mixed_models.R variance, 40 subjects; DeHaan 2026
+  ch. 3's random-intercept model on the single-trial response): full cohort; confidence intervals (Riley:
+  glmmTMB Wald; or bootstrap over subjects); experiment (FR1 / catFR1 / pyFR) as a term (list length and
+  timing differ -> could pose as subject differences); split-half reliability to separate the session
+  share from sampling noise; the full time x frequency x level partition needs per-trial time-frequency
+  power (not cached -> recompute).
+- Response types (alpha x high gamma, up / none / down): full cohort; anatomy (MNI) and latency per type;
+  whether a type is stable between session halves.
+- Variance components: the full fit (all electrodes; the preliminary uses 5 random per subject x lobe:
+  `--refit` after raising LMM_MAX_ELECTRODES); over time and frequency once per-trial time-frequency power exists.
 - Alpha vs high gamma trial by trial (r ~ 0): full cohort; check a shared broadband / aperiodic shift
   does not drive it; extends Marks 2021 (site-level, trial-averaged, within-epoch z, no baseline).
-- Gain vs timing: single-trial latency (template / cross-correlation), not early-vs-late averages.
+- Single-trial latency (half-max per trial, in the variance model): replace with a template / cross-correlation
+  estimate; latency reliability between session halves.
 - Blank interval (plot_blank_interval.py): occipital high gamma rises with blank length (FR1 gradual,
   pyFR flat 800-1050 then a step up; all 37 pyFR subjects span the range) -> fit hazard-rate
   (expectation) vs recovery-from-adaptation models (Groen 2022). Short blanks: occipital high-gamma
@@ -39,11 +46,15 @@ connectivity stays out of the proposal (Mike decides what goes in the paper).
   -> report; the response measures use the session-mean baseline. Previous word's response predicts
   the next positively (beta 0.08-0.30 with serial position controlled) = slow state, not adaptation;
   control list-level drift before interpreting.
-- Task structure as a variance component (task_design in plot_variance_structure.py: serial position,
-  list number, blank length, same category as previous word; adjusted for chance fit): 3-7% of single-trial
-  variance. Still to add: experiment (FR1 / catFR1 / pyFR) as a level or covariate (list length, timing
-  differ -> could pose as subject differences), item identity / word properties, and the same control in
-  the blank-interval and previous-word analyses (list-level drift).
+- Task structure now in the mixed model (serial position, list, word, session x list, blank length, same
+  category). Still to add: word properties (frequency, concreteness) for the item term, and the same model
+  for the blank-interval and previous-word analyses (list-level drift).
+- Connectivity in the same framework (decide with Riley / Mike): synchrony is per pair x session (not per
+  trial), so a pair-level model: word-on - off synchrony ~ distance (spline) + (1|subject) + (1|lobe pair) +
+  (1|electrode A) + (1|electrode B) + (1|pair) + (1|pair:session). Distance and lobe pair are this paper's;
+  the pair / session split is FC test-retest (Riley ch. 4, joint project) -> agree the split first. Task
+  factors would need per-trial synchrony (high-gamma AEC from the cached envelopes is possible but not
+  orthogonalized; alpha ciPLV needs a recompute).
 - Paper: cite and differentiate Kucewicz et al. 2019 (same data, 165 subjects, high-gamma latency
   gradient) and Marks et al. 2021.
 

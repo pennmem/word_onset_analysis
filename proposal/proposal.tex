@@ -25,39 +25,41 @@ and ${\sim}$300 words per session, this dataset can answer these questions. Memo
 \citep[see][]{DeHaan_2026}.
 
 \section*{Aims}
-\textbf{Aim 1. Where does the variability sit?} Partition the word response (word on vs.\ the blank before it)
-into subject, electrode, session and trial components per region, over time and frequency, and estimate how
-reliable each level is. \emph{Preliminary (40 subjects; Fig.~\ref{fig:var}):} single trials are dominated by
-trial-to-trial variation (71--94\% outside occipital cortex, 43\% in occipital high gamma), of which task
-structure (serial position, list number, blank length, same category as the previous word) explains only
-3--7\% of the variance once its chance fit is removed. In the
-trial-averaged response, electrodes carry most of the variance in occipital cortex (${\sim}$60--70\%) and the
-subject share is largest in limbic regions and the hippocampus (20--30\%).
+\textbf{Aim 1. Where does the variability sit?} Split the single-trial word response (word on vs.\ the
+electrode's usual pre-word level) into subject, electrode, session, task and trial components per region,
+with one random-intercept model as \citet{DeHaan_2026} used for recall. \emph{Preliminary (40 subjects,
+5 electrodes per subject and lobe; Fig.~\ref{fig:vc}):} most single-trial variance is private to one
+electrode on one trial (alpha 61--87\%, high gamma 38--79\%). The next largest part is a trial's deviation
+shared by all of a lobe's electrodes (alpha 9--34\%, high gamma 4--15\%), then list-to-list drift within a
+session (2--6\%). Task structure explains almost none of it: serial position $\le$0.2\%, its
+electrode-specific form $\le$0.5\%, list number, the word itself, blank length and category $\le$0.2\%.
+Stable differences are largest in occipital high gamma (subject 15\%, electrode 26\%,
+electrode $\times$ session 14\%); for alpha outside occipital cortex they are near zero.
 
-\textbf{Aim 2. What is the stable part?} Describe the electrode-level structure: response types from each
-electrode's spectral and temporal profile, their anatomy and latency, and whether a type is a fixed property
-of an electrode across sessions. \emph{Preliminary:} five types emerge (Fig.~\ref{fig:types}), from
-broadband increases (34\% of occipital electrodes) to alpha/beta decreases with late high gamma and
-low-up/high-down profiles (frontal, parietal); an electrode's pattern replicates between session halves
-(Fig.~\ref{fig:elrel}; median $r$ = 0.90 occipital high gamma).
+\textbf{Aim 2. What is the stable part?} Which electrodes respond, in which band, and whether that is a
+fixed property of an electrode across sessions. \emph{Preliminary:} outside occipital cortex 65--80\% of
+electrodes show neither an alpha nor a high-gamma response (paired $t$ over trials, FDR 0.05); an alpha
+decrease with a high-gamma increase is common only in occipital cortex (21\% of electrodes, 1--2\%
+elsewhere). Which electrodes respond strongly replicates between session halves (Fig.~\ref{fig:elrel};
+median $r$ = 0.90 in occipital high gamma).
 
-\textbf{Aim 3. Are the spectral components independent beyond space, and what moves them from trial to trial?}
-\citet{Marks_2021} found the bands separate across sites. \emph{Preliminary:} they are also independent trial by
-trial at the same electrode (Fig.~\ref{fig:coupling}; median $r$ between $-0.04$ and 0.06 in every lobe,
-unchanged with task structure removed).
-Serial position scales the high-gamma response without shifting it (Figs.~\ref{fig:gain},~\ref{fig:sptime}),
-alpha habituates across lists (Fig.~\ref{fig:mod}), and the blank interval has small occipital effects
-(Fig.~\ref{fig:wait}) that can be tested against recovery from adaptation \citep{Groen_2022} vs.\ temporal
-expectation. Planned: single-trial latency, baseline vs.\ gain, and the same tests per response type.
+\textbf{Aim 3. Are alpha and high gamma independent beyond space, and what moves them from trial to trial?}
+\citet{Marks_2021} found the bands at separate sites. \emph{Preliminary:} at the same electrode they are
+also independent trial by trial (Fig.~\ref{fig:coupling}; median $r$ between $-0.04$ and 0.06 in every
+lobe). Along the list the high-gamma response shrinks while alpha rises (Fig.~\ref{fig:mod}), and the
+high-gamma peak drops without a consistent change in latency (Fig.~\ref{fig:gain}). The blank interval has
+small occipital effects (Fig.~\ref{fig:wait}) that can be tested against recovery from adaptation
+\citep{Groen_2022} vs.\ temporal expectation. Planned: what the shared trial-to-trial component is
+(arousal, attention, or a common reference), single-trial latency, and the same tests per response type.
 
 \section*{Open issues}
 \begin{itemize}\setlength{\itemsep}{0pt}
 \item Trial-level artifact rejection must be added to the main pipeline (one artifact trial distorts
 Fig.~\ref{fig:latency}); the preliminary analyses drop robust outlier trials.
-\item Per-trial time--frequency power is not cached (only alpha, high gamma and trial-averaged spectra), so the
-full time $\times$ frequency $\times$ level partition needs a recompute.
-\item The session share includes the sampling noise of each session mean; split-half reliability will
-separate it. Type names are read off one clustering run and are provisional.
+\item The model fit is preliminary (5 random electrodes per subject and lobe, no confidence intervals); the
+full fit and Wald or bootstrap intervals are next.
+\item The session share includes the sampling noise of each session's average; split-half reliability will
+separate it. Over time and frequency the split needs per-trial time--frequency power (not cached).
 \end{itemize}
 
 \section*{Figures (most to least relevant)}
@@ -65,57 +67,34 @@ Status in brackets: \emph{prelim.} = 40 random subjects; \emph{full} = all subje
 word-onset paper.
 
 \begin{figure}[!h]\centering
-\includegraphics[width=\linewidth]{img/variance_partition.png}
-\caption{[prelim.] Variance partition of the word response per lobe. Top: high-gamma response over time
-(trial-averaged per electrode-session; the trial-to-trial and task-structure shares of single trials in white). Bottom: response
-per frequency (Cohen's $d$, 11 bins 5--150 Hz). Subject (blue), electrode within subject (teal), session within
-electrode (yellow, including sampling noise).}
-\label{fig:var}
-\end{figure}
-
-\begin{figure}[!h]\centering
-\includegraphics[width=\linewidth]{img/response_types.png}
-\caption{[prelim.] Electrode response types (k-means on spectral and high-gamma time profiles of the more
-responsive half of electrodes): median (line) and interquartile range per type, and each lobe's composition.}
-\label{fig:types}
+\includegraphics[width=\linewidth]{img/variance_components.png}
+\caption{[prelim.] Variance components of the single-trial response (alpha and high-gamma power, and
+high-gamma half-max latency at responsive electrodes), one random-intercept model per lobe and measure (as \citealp{DeHaan_2026} ch.~3 for recall; up to 5 random electrodes per subject). Task: serial
+position, its electrode-specific form, list number, the word, blank length and category together. Word
+presentation: a trial's deviation shared by all of a lobe's electrodes; residual: what is left per electrode
+and trial.}
+\label{fig:vc}
 \end{figure}
 
 \begin{figure}[!h]\centering
 \includegraphics[width=0.75\linewidth]{img/alpha_hg_coupling.png}
-\caption{[prelim.] Alpha vs.\ high-gamma response: Pearson $r$ across trials at each electrode (red), the same
-with task structure regressed out (orange), and across electrodes within each subject (grey).}
+\caption{[prelim.] Alpha vs.\ high-gamma response: Pearson $r$ across trials at each electrode (red; dots:
+electrodes) and across a lobe's electrodes within each subject (grey; dots: subjects). Above: subjects' mean
+$r$ (Fisher $z$) vs.\ 0, one-sample $t$, BH-FDR over 12 tests.}
 \label{fig:coupling}
 \end{figure}
 
 \begin{figure}[!h]\centering
-\includegraphics[width=0.95\linewidth]{img/electrode_reliability.png}
-\caption{[full] Left: an electrode's response pattern replicates between session halves (per subject and
-lobe, $r$ across electrodes). Right: alpha vs.\ high-gamma Cohen's $d$ across electrodes.}
+\includegraphics[width=0.6\linewidth]{img/electrode_reliability.png}
+\caption{[full] The same electrodes respond strongly in both halves of a subject's sessions: $r$ of
+Cohen's $d$ (word on vs.\ off) across a lobe's electrodes between session halves (dots: subjects).}
 \label{fig:elrel}
 \end{figure}
 
 \begin{figure}[!h]\centering
-\includegraphics[width=0.5\linewidth]{img/gain_timing.png}
-\caption{[prelim.] Gain vs.\ timing: per responsive electrode, high-gamma peak ratio (late / early in the list)
-against the latency shift.}
-\label{fig:gain}
-\end{figure}
-
-\begin{figure}[!h]\centering
-\includegraphics[width=\linewidth]{img/serialpos_timecourse.png}
-\caption{[full] High-gamma response for serial positions 2--4 (dark) and 8--12 (light): smaller, not later.}
-\label{fig:sptime}
-\end{figure}
-
-\begin{figure}[!h]\centering
-\includegraphics[width=0.6\linewidth]{img/carpet_example.png}
-\caption{[prelim.] Single-trial high gamma of one occipital electrode, trials sorted by serial position.}
-\label{fig:carpet}
-\end{figure}
-
-\begin{figure}[!h]\centering
-\includegraphics[width=\linewidth]{img/trial_modulators.png}
-\caption{[full] Word-on power by serial position, list number and blank interval per lobe.}
+\includegraphics[width=0.8\linewidth]{img/task_effects.png}
+\caption{[prelim.] Task effects from the model of Fig.~\ref{fig:vc}: estimate ($\pm$ SE) per serial
+position and list number, per lobe, for alpha and high-gamma power and high-gamma latency.}
 \label{fig:mod}
 \end{figure}
 
