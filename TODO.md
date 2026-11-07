@@ -18,45 +18,56 @@
 - Supplementary table (ADD): anatomical label -> 12-region mapping (region_to_burke_lobe.csv).
 
 ## Proposal (variability of the word response): to confirm
-Status 2026-11-05. Memory analyses on hold (DeHaan 2026 thesis ch. 3 covers task structure in the SME);
-connectivity stays out of the proposal (Mike decides what goes in the paper).
-- **Trial-level artifact rejection in the main pipeline** (one R1323T trial makes the supramarginal spike
-  in Fig. 4B; affects every analysis) -> rerun all analyses and simulations. Preliminaries already drop
-  robust outliers (window mean and whole-clip peak, 10 MAD).
-- **Latency reliability** (re-added; was not in the file): does an electrode's half-max latency replicate
-  between session halves, as the amplitude pattern does (r up to 0.90)?
-- Variance components (plot_variance_structure.py -> mixed_models.R variance, 40 subjects; DeHaan 2026
-  ch. 3's random-intercept model on the single-trial response): full cohort; confidence intervals (Riley:
-  glmmTMB Wald; or bootstrap over subjects); experiment (FR1 / catFR1 / pyFR) as a term (list length and
-  timing differ -> could pose as subject differences); split-half reliability to separate the session
-  share from sampling noise; the full time x frequency x level partition needs per-trial time-frequency
-  power (not cached -> recompute).
-- Response types (alpha x high gamma, up / none / down): full cohort; anatomy (MNI) and latency per type;
-  whether a type is stable between session halves.
-- Variance components: the full fit (all electrodes; the preliminary uses 5 random per subject x lobe:
-  `--refit` after raising LMM_MAX_ELECTRODES); over time and frequency once per-trial time-frequency power exists.
-- Alpha vs high gamma trial by trial (r ~ 0): full cohort; check a shared broadband / aperiodic shift
-  does not drive it; extends Marks 2021 (site-level, trial-averaged, within-epoch z, no baseline).
-- Single-trial latency (half-max per trial, in the variance model): replace with a template / cross-correlation
-  estimate; latency reliability between session halves.
-- Blank interval (plot_blank_interval.py): occipital high gamma rises with blank length (FR1 gradual,
-  pyFR flat 800-1050 then a step up; all 37 pyFR subjects span the range) -> fit hazard-rate
-  (expectation) vs recovery-from-adaptation models (Groen 2022). Short blanks: occipital high-gamma
-  baseline slightly up and alpha baseline down (previous word's offset in the -700..-100 window)
-  -> report; the response measures use the session-mean baseline. Previous word's response predicts
-  the next positively (beta 0.08-0.30 with serial position controlled) = slow state, not adaptation;
-  control list-level drift before interpreting.
-- Task structure now in the mixed model (serial position, list, word, session x list, blank length, same
-  category). Still to add: word properties (frequency, concreteness) for the item term, and the same model
-  for the blank-interval and previous-word analyses (list-level drift).
-- Connectivity in the same framework (decide with Riley / Mike): synchrony is per pair x session (not per
-  trial), so a pair-level model: word-on - off synchrony ~ distance (spline) + (1|subject) + (1|lobe pair) +
+Status 2026-11-06. Memory analyses on hold (DeHaan 2026 thesis ch. 3 covers task structure in the SME);
+connectivity stays out of the proposal (Mike decides what goes in the paper). These items are kept here, not
+in the proposal text. Every model or analysis choice and its run cost goes to the user before running.
+
+**Data coverage (what does not use all the data yet)**
+- Variance model (Figs. 1B, 2B): at most 5 random electrodes per subject x lobe. Power: frontal 19% of electrodes,
+  temporal 20%, parietal 36%, limbic 45%, occipital 55%, hippocampus 66%. Latency: 69-93% of responsive electrodes.
+  Task effects, coupling and prevalence already use all electrodes.
+- Serial positions 13-15 of pyFR (1.6% of events, 21% of pyFR's) are dropped from the model, task effects and coupling:
+  decide whether to keep them. Position 1 (no blank baseline) and practice lists stay out on purpose.
+- Fig. 3B needs >= 5 electrodes in the lobe (135/254 subjects occipital, 157/262 hippocampus); Fig. 3A needs >= 2
+  sessions as well (99-246 subjects). Inherent to the measures unless the minimum changes.
+
+**Model**
+- Done 2026-11-06: per-event Cohen's d, DeHaan 2026 ch. 3 terms + electrode, electrode in session, word event.
+  Single-event d has heavier tails than log power (excess kurtosis alpha 5.1 vs 0.3, high gamma 2.2 vs 0.4): check
+  whether the shares depend on the tails (residuals; rank-based or log comparison).
+- Confidence intervals for the variance shares (Riley: glmmTMB Wald; or bootstrap over subjects); experiment
+  (FR1 / catFR1 / pyFR) as a term (list length and timing differ -> could pose as subject differences).
+- The session share includes the sampling noise of each session's average; split-half reliability separates it.
+  Over time and frequency the split needs per-event time-frequency power (not cached -> recompute).
+- Word properties (frequency, concreteness) for the item term.
+
+**Data quality**
+- **Artifact rejection per word event in the main pipeline** (one R1323T word event makes the supramarginal spike
+  in Fig. 2A; affects every analysis) -> rerun all analyses and simulations. Preliminaries already drop robust
+  outliers (window mean and whole-clip peak, 10 MAD).
+
+**Analyses**
+- Alpha vs high gamma: |d| r across electrodes is 0.46 in occipital, 0.13-0.21 elsewhere; occipital alpha goes both
+  ways where high gamma rises (19% down, 8% up). Check whether this is real or signal quality, and that a shared
+  broadband / aperiodic shift does not drive r ~ 0 across word events; extends Marks 2021.
+- Response types (alpha x high gamma, up / none / down): anatomy (MNI), latency per type, stability between
+  session halves; within-region anatomical order as Pinheiro-Chagas 2024 (arithmetic vs baseline; math vs non-math).
+- Latency per word event (half-max; SD ~180 ms): replace with a template / cross-correlation estimate; does an
+  electrode's latency replicate between session halves, as the amplitude pattern does (r up to 0.90)?
+- What the shared word-event component is (arousal, attention, common reference).
+- Blank interval (plot_variance_structure.py sections 4-5): dropped from the proposal 2026-11-06. The blank model now
+  uses per-event d; the offset curve still uses the envelope and log alpha. Hazard-rate (expectation) vs recovery-from-adaptation fits (Groen 2022); whether short
+  blanks contaminate the word-off baseline -> paper's methods. Offset curve: each time bin only has the word
+  events whose word-off window covers it (short blanks early, long late); coverage cut or per-design panels.
+- Connectivity in the same framework (decide with Riley / Mike): synchrony is per pair x session (not per word
+  event), so a pair-level model: word-on - off synchrony ~ distance (spline) + (1|subject) + (1|lobe pair) +
   (1|electrode A) + (1|electrode B) + (1|pair) + (1|pair:session). Distance and lobe pair are this paper's;
   the pair / session split is FC test-retest (Riley ch. 4, joint project) -> agree the split first. Task
-  factors would need per-trial synchrony (high-gamma AEC from the cached envelopes is possible but not
+  factors would need per-event synchrony (high-gamma AEC from the cached envelopes is possible but not
   orthogonalized; alpha ciPLV needs a recompute).
 - Paper: cite and differentiate Kucewicz et al. 2019 (same data, 165 subjects, high-gamma latency
-  gradient) and Marks et al. 2021.
+  gradient) and Marks et al. 2021. Check the Methods line "12 trials of 12 words (25 trials of 15 words in the
+  variant)": the events show up to 25 lists of 12 words (FR1, catFR1) and up to 16 lists of 15 words (pyFR).
 
 ## Reliability (final analysis of the paper, per PI)
 - Done (2026-10-14, plot_reliability.py): test-retest as riley-thesis

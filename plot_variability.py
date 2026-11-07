@@ -1,10 +1,10 @@
-"""plot_variability.py -- preliminary results for the variability / trial-modulator proposal.
+"""plot_variability.py -- preliminary results for the variability / event-modulator proposal.
 
-Reads compute.py's per-trial power (alpha: multitaper; high gamma: sub-band Hilbert, each
-normalized by its word-off mean), word on = 0-600 ms. Per electrode and session, the trial
+Reads compute.py's per-event power (alpha: multitaper; high gamma: sub-band Hilbert, each
+normalized by its word-off mean), word on = 0-600 ms. Per electrode and session, the event
 response y = log word-on power, robust outliers dropped (|y - median| > OUTLIER_MAD x MAD:
-e.g. R1323T session 3 trial 90, a broadband transient ~5000x baseline on 82 of 148 electrodes),
-then z-scored over the session's trials. Each trial's own word-off window is not used: after
+e.g. R1323T session 3 event 90, a broadband transient ~5000x baseline on 82 of 148 electrodes),
+then z-scored over the session's events. Each event's own word-off window is not used: after
 a short blank it can contain the previous word's offset response.
 
   1. Electrode-pattern stability: per subject with >= 2 sessions, sessions alternately in two
@@ -51,7 +51,7 @@ def zs(v: np.ndarray) -> np.ndarray:
 
 
 def session_tables(p: dict, lobe_of: dict) -> tuple[list, pd.DataFrame | None]:
-    """(electrode rows, trial x lobe table) of one session."""
+    """(electrode rows, event x lobe table) of one session."""
     lo, hi = np.log(np.asarray(p["trial_pow_lo"], float)), np.log(np.asarray(p["trial_pow_hi"], float))
     for x in (lo, hi):   # robust outliers per electrode
         med = np.nanmedian(x, 0); mad = np.nanmedian(np.abs(x - med), 0) * 1.4826
@@ -132,7 +132,7 @@ def main() -> None:
         os.makedirs(os.path.dirname(stem("x")), exist_ok=True)
         E[band].to_csv(stem(f"electrodes_{band}.csv"), index=False); T[band].to_csv(stem(f"trials_{band}.csv"), index=False)
 
-    # trial analyses: scored lists only (catFR1 list -1 is an unscored practice list); serial position <= 12
+    # event analyses: scored lists only (catFR1 list -1 is an unscored practice list); serial position <= 12
     T = {b: t[(t["list"] >= 1) & (t["serialpos"] <= 12)] for b, t in T.items()}
 
     # 1. do electrode differences replicate across sessions?

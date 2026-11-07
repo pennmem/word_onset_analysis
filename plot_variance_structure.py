@@ -1,26 +1,34 @@
-"""plot_variance_structure.py -- where the word response varies (preliminary, subset of subjects).
+"""plot_variance_structure.py -- where the word response varies.
 
-Reads compute.py's power pickles (alpha, high gamma) for N_SUBJECTS random subjects.
-Per trial and electrode: the response = word-on minus the electrode-session mean word-off
-(alpha: log multitaper power, 0-600 ms; high gamma: log Hilbert power, and plot_latency.response over
-time). Outlier trials dropped per electrode (whole-clip peak or window mean > OUTLIER_MAD x MAD).
+Reads compute.py's power pickles (alpha, high gamma). Per word event and electrode-session, the power
+response in the paper's units: (word-on power - mean word-off power) / the pooled SD of Cohen's d, whose
+mean over the session's word events is the cached Cohen's d. Latency: half-max of plot_latency.response.
+Outlier events dropped per electrode (log word-on power or whole-clip peak > OUTLIER_MAD x MAD).
 Scored lists, serial positions 2-12 (position 1 follows the countdown and is not in the events).
 
-  1. Variance components (mixed_models.R variance; DeHaan 2026 ch. 3's random-intercept model, on
-     the single-trial response instead of recall): subject, electrode, electrode x session, serial
-     position, electrode x serial position, list number, session x list, word (item), the word
-     presentation shared by a lobe's electrodes (event), blank length + same category as the
-     previous word (fixed), residual (electrode-specific, trial to trial). Quick preliminary fit:
-     at most LMM_MAX_ELECTRODES random electrodes per subject and lobe (refit: --refit). Shown as
-     stacked shares per lobe, the task terms (serial position, electrode x serial position, list, word,
-     blank + category) grouped. The same model for single-trial high-gamma latency (half-max of each
-     trial's response, responsive electrodes; plot_latency.half_max).
-  2. Task effects: the model's serial-position and list-number estimates per lobe (alpha, high gamma, latency).
-  3. Alpha vs high gamma: per electrode Pearson r across trials, vs per subject r across electrodes;
-     per lobe, subjects' mean Fisher z vs 0 (one-sample t), BH-FDR over both measures x lobes.
+  1. Variance components (mixed_models.R variance): DeHaan 2026 ch. 3's random intercepts (word, serial
+     position, list, subject, subject:word, session, subject:serial position, list:serial position, list in
+     session, session:serial position), plus electrode, electrode in session and the word event shared by a
+     lobe's electrodes; residual: electrode and event. At most --max-electrodes random electrodes per subject
+     and lobe (seed 0; refit: --refit). Stacked shares per lobe, power and latency apart.
+  2. Task effects: per serial position and list number, all electrodes (latency: responsive): subject and lobe
+     means as deviations from the subject's mean, mean and 95% CI across subjects; per-subject linear slopes
+     vs 0 (one-sample t), BH-FDR over lobes x measures x terms.
+  3. Alpha vs high gamma: per electrode Pearson r across word events; per subject r across electrodes of
+     Cohen's d and of |Cohen's d|; per lobe, subjects' mean Fisher z vs 0, BH-FDR over measures x lobes.
+     Prevalence: paired t (word on vs off) over word events per electrode, BH-FDR 0.05.
+  4. Recovery from the previous word's offset (not yet in the paper's units): each event's word-off window
+     (-700 to -100 ms before the word) re-aligned to time since the previous word disappeared: high-gamma
+     envelope vs the electrode's word-off mean (responsive electrodes) and alpha log power vs its session
+     mean (window centre); per subject and lobe, mean and 95% CI across subjects.
+  5. Blank interval and the neighbouring words (mixed_models.R blank): per lobe and band, the response
+     ~ blank length (50 ms bins, per design: 750-1000 vs 800-1200 ms) + the previous word's response
+     (z, same electrode and list) x blank length + the blank after the word (control: unknown when the
+     word appears) + (1|subject) + (1|electrode) + (1|electrode x session) + (1|serial position) +
+     (1|session x list). Estimates with 95% Wald CIs; coefficients BH-FDR over lobes x bands x terms.
 -> figures/variance_structure/*.png (tables and model fits: results/variance_structure/)
 
-    python plot_variance_structure.py [--n-subjects N] [--from-csv] [--refit]
+    python plot_variance_structure.py [--n-subjects N] [--from-csv] [--refit] [--cores C] [--max-electrodes M]
 """
 from __future__ import annotations
 
@@ -31,7 +39,7 @@ from os.path import join
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import ttest_1samp
+from scipy.stats import norm, t as tdist, ttest_1samp
 from statsmodels.stats.multitest import multipletests
 from tqdm.auto import tqdm
 
@@ -44,40 +52,47 @@ N_SUBJECTS = 40
 OUTLIER_MAD = 10
 LMM_MAX_ELECTRODES = 5
 SP_RANGE = (2, 12)
+LEVELS = 26   # bins for serial position (<= 12) and list number (<= 25)
+OFFSET_BIN_MS = 20
+OFFSET_MAX_MS = 1300
 BANDS = {"alpha": "Alpha power", "high_gamma": "High-gamma power", "latency": "High-gamma latency\n(responsive electrodes)"}
 GROUPS = {   # stacked share segments: label -> (model terms, colour)
     "Subject": (["subject"], "#1f4fa3"), "Electrode": (["electrode"], "#d62728"),
-    "Electrode x session": (["elsess"], "#f2c12e"),
-    "Task (serial position, list, word, blank, category)": (["sp", "el_sp", "list", "item", "fixed"], "#2ca02c"),
-    "Session x list": (["sess_list"], "#ff7f0e"), "Word presentation (shared by a lobe's electrodes)": (["event"], "#7b4fa3"),
-    "Residual (electrode, trial)": (["Residual"], "#d9d9d9")}
+    "Electrode in session": (["elsess"], "#f2c12e"),
+    "Session": (["session"], "#8c564b"), "List in session": (["sess_list"], "#ff7f0e"),
+    "Task (serial position, list, word)": (["sp", "list", "item", "subj_item", "subj_sp", "list_sp", "sess_sp"], "#2ca02c"),
+    "Word event": (["event"], "#7b4fa3"),
+    "Residual (electrode, event)": (["Residual"], "#d9d9d9")}
 
 def robust_ok(v: np.ndarray) -> np.ndarray:
-    """(trials, electrodes) True where the trial is not a robust outlier of its electrode."""
+    """(trials, electrodes) True where the event is not a robust outlier of its electrode."""
     med = np.nanmedian(v, 0); mad = np.nanmedian(np.abs(v - med), 0) * 1.4826
     return np.abs(v - med) <= OUTLIER_MAD * mad
 
 
+def pooled_sd(hi: np.ndarray, lo: np.ndarray) -> np.ndarray:
+    """(electrodes,) the pooled SD of helper.cohens_d."""
+    return np.sqrt(((len(hi) - 1) * hi.var(0, ddof=1) + (len(lo) - 1) * lo.var(0, ddof=1)) / (len(hi) + len(lo) - 2))
+
+
 def task_columns(w: pd.DataFrame, blank: np.ndarray) -> pd.DataFrame:
-    """Per trial: serial position, list, word, blank length (z within session; NaN where it cannot be
-    measured: session median), same category as the previous word (catFR1; 0 elsewhere)."""
+    """Per event: serial position, list, word, blank length (z within session; NaN where it cannot be
+    measured: session median)."""
     lst = w["trial"].to_numpy(float)
     b = np.where(np.isfinite(blank), blank, np.nanmedian(blank))
-    same = np.zeros(len(w))
-    if "category" in w:
-        cat = w["category"].astype(str).to_numpy()
-        same = ((cat == np.r_[[""], cat[:-1]]) & (np.r_[[np.nan], lst[:-1]] == lst)).astype(float)
     item = w["item_name"] if "item_name" in w else w["item"]
     return pd.DataFrame({"sp": w["serialpos"].to_numpy(int), "list": lst.astype(int),
                          "item": item.astype(str).str.upper().to_numpy(),
-                         "blank_z": (b - b.mean()) / (b.std() or 1), "same": same})
+                         "blank_z": (b - b.mean()) / (b.std() or 1)})
 
 
 def main() -> None:
     args, save_root = fc.plot_args(__doc__, join("figures", "variance_structure"), **{
         "--n-subjects": dict(type=int, default=N_SUBJECTS, help="random subjects (seed 0)"),
         "--from-csv": dict(action="store_true", help="reuse the saved tables and model fits"),
-        "--refit": dict(action="store_true", help="refit the single-trial mixed models")})
+        "--refit": dict(action="store_true", help="refit the single-event mixed models"),
+        "--cores": dict(type=int, default=6, help="parallel model fits in R"),
+        "--max-electrodes": dict(type=int, default=LMM_MAX_ELECTRODES, help="per subject and lobe, in the models")})
     os.makedirs(args.out_dir, exist_ok=True)
     tdir = os.path.dirname(fc.table_path(join(args.out_dir, "x")))
     lobe_of = fc.load_burke_maps()
@@ -88,7 +103,7 @@ def main() -> None:
     names = sorted(n for n in files["high_gamma"] if n.split("_")[0] in pick and n in files["alpha"])
 
     if not args.from_csv:
-        trial_rows, lv_rows = [], []
+        trial_rows, lv_rows, off, lev = [], [], {}, {}
         for n in tqdm(names, desc="sessions"):
             g, a = (fc.load_pickle(str(files[b][n])) for b in ("high_gamma", "alpha"))
             sub, sess = str(g["sid"][0]), str(g["sid"])
@@ -99,116 +114,233 @@ def main() -> None:
                 continue
             roi = fc.roi_of_reg_full(g["reg_full"], lobe_of)
             lobe = np.array([r.split("-", 1)[1] if r else None for r in roi], dtype=object)
-            x, t = response(g)                                     # (trials, electrodes, time)
+            x, t = response(g)                                     # (events, electrodes, time)
             pk = np.nanmax(np.abs(x), -1)
             ahi, alo = np.log(np.asarray(a["trial_pow_hi"], float)), np.log(np.asarray(a["trial_pow_lo"], float))
-            ya = ahi - np.nanmean(alo, 0)                          # alpha response per trial
-            ghi, glo = np.log(np.asarray(g["trial_pow_hi"], float)), np.log(np.asarray(g["trial_pow_lo"], float))
-            yg = ghi - np.nanmean(glo, 0)
-            ok = robust_ok(pk) & robust_ok(yg) & robust_ok(ya)
+            rhi, rlo = {}, {}
+            for k, p_ in (("a", a), ("g", g)):
+                rhi[k], rlo[k] = np.asarray(p_["trial_pow_hi"], float), np.asarray(p_["trial_pow_lo"], float)
+            sa, sg = pooled_sd(rhi["a"], rlo["a"]), pooled_sd(rhi["g"], rlo["g"])
+            ya, yg = (rhi["a"] - rlo["a"].mean(0)) / sa, (rhi["g"] - rlo["g"].mean(0)) / sg   # mean over events: Cohen's d
+            pa, pg = (rhi["a"] - rlo["a"]) / sa, (rhi["g"] - rlo["g"]) / sg                   # word on - off, same event
+            ok = robust_ok(pk) & robust_ok(np.log(rhi["g"])) & robust_ok(ahi)
             x[~ok] = np.nan; ya[~ok] = np.nan; yg[~ok] = np.nan
             tc = task_columns(w, blank)
             use = (tc["list"].to_numpy() >= 1) & tc["sp"].between(*SP_RANGE).to_numpy()
             resp = responsive(g)
+            design = "800-1200" if str(g["sid"][1]) == "pyFR" else "750-1000"
+            lo_env = np.asarray(g["env_lo"], float)                # word-off window, (events, electrodes, time)
+            if lo_env.shape[:2] == x.shape[:2]:   # 4. time since the previous word's offset
+                xl = lo_env - np.nanmean(lo_env, axis=(0, 2))[:, None]
+                xl[~ok] = np.nan
+                al = alo - np.nanmean(alo, 0); al[~ok] = np.nan
+                tl = g["env_lo_t0_ms"] + g["env_step_ms"] * (np.arange(xl.shape[-1]) + 0.5)
+                m = use & np.isfinite(blank)
+                for lb in fc.LOBES:
+                    e = resp & (lobe == lb)
+                    if e.any():
+                        for k, v, since in (("high_gamma", np.nanmean(xl[m][:, e], 1), blank[m, None] + tl[None]),
+                                            ("alpha", np.nanmean(al[m][:, e], 1)[:, None], blank[m, None] + tl.mean())):
+                            bi, ok2 = (since // OFFSET_BIN_MS).astype(int).ravel(), np.isfinite(v.ravel())
+                            nb = OFFSET_MAX_MS // OFFSET_BIN_MS
+                            ok2 &= (bi >= 0) & (bi < nb)
+                            s0, n0 = off.get((sub, lb, k), (np.zeros(nb), np.zeros(nb)))
+                            off[(sub, lb, k)] = (s0 + np.bincount(bi[ok2], v.ravel()[ok2], nb),
+                                                 n0 + np.bincount(bi[ok2], minlength=nb))
             for c in np.flatnonzero(lobe != None):  # noqa: E711
                 el = f"{sub}|{g['labels'][c]}"
                 e = use & np.isfinite(yg[:, c]) & np.isfinite(ya[:, c])
                 if e.sum() < 20:
                     continue
-                lat = half_max(x[e, c], t)[0] if resp[c] else np.full(e.sum(), np.nan)   # single-trial half-max
+                lat = half_max(x[e, c], t)[0] if resp[c] else np.full(e.sum(), np.nan)   # single-event half-max
+                for meas, v in (("alpha", ya[e, c]), ("high_gamma", yg[e, c]), ("latency", lat)):
+                    for term in ("sp", "list"):
+                        lv, fin = tc.loc[e, term].to_numpy(), np.isfinite(v)
+                        s0, n0 = lev.get((sub, lobe[c], meas, term), (np.zeros(LEVELS), np.zeros(LEVELS)))
+                        lev[(sub, lobe[c], meas, term)] = (s0 + np.bincount(lv[fin], v[fin], LEVELS), n0 + np.bincount(lv[fin], minlength=LEVELS))
                 trial_rows.append(tc[e].assign(subject=sub, electrode=el, session=sess, lobe=lobe[c],
                                                event=np.flatnonzero(e), alpha=ya[e, c], high_gamma=yg[e, c],
-                                               latency=lat))
+                                               latency=lat, blank_ms=blank[e], design=design))
                 lv_rows.append({"subject": sub, "electrode": el, "session": sess, "lobe": lobe[c],
                                 "d_alpha": a["cohens_d"][c], "d_hg": g["cohens_d"][c],
-                                "r_trial": np.corrcoef(ya[e, c], yg[e, c])[0, 1]})
+                                "r_trial": np.corrcoef(ya[e, c], yg[e, c])[0, 1], "n": e.sum(),
+                                "pa_sum": pa[e, c].sum(), "pa_sq": (pa[e, c] ** 2).sum(),
+                                "pg_sum": pg[e, c].sum(), "pg_sq": (pg[e, c] ** 2).sum()})
         T = pd.concat(trial_rows, ignore_index=True)
-        T.to_csv(join(tdir, "trials.csv"), index=False)
-        pd.DataFrame(lv_rows).to_csv(join(tdir, "electrode_sessions.csv"), index=False)
         print(f"[variance] {T['subject'].nunique()} subjects, {T['electrode'].nunique()} electrodes, "
-              f"{T['session'].nunique()} sessions, {len(T)} electrode-trials")
-        if args.refit or not os.path.exists(join(tdir, "components.csv")):
-            subprocess.run(["Rscript", "mixed_models.R", "variance", tdir, str(LMM_MAX_ELECTRODES)], check=True)
+              f"{T['session'].nunique()} sessions, {len(T)} electrode-events")
+        rng = np.random.default_rng(0)   # the models: at most LMM_MAX_ELECTRODES random electrodes per subject and lobe
+        pick = lambda d: {el for es in d.groupby(["subject", "lobe"])["electrode"].unique() for el in rng.permutation(es)[:args.max_electrodes]}
+        keep = pick(T)                                     # power models
+        keep_lat = pick(T[T["latency"].notna()])           # latency model: among responsive electrodes
+        T = T[T["electrode"].isin(keep | keep_lat)].assign(in_power=lambda d: d["electrode"].isin(keep))
+        T.loc[~T["electrode"].isin(keep_lat), "latency"] = np.nan
+        T.to_csv(join(tdir, "trials.csv"), index=False)
+        del T
+        pd.DataFrame(lv_rows).to_csv(join(tdir, "electrode_sessions.csv"), index=False)
+        pd.to_pickle(off, join(tdir, "offset.pkl")); pd.to_pickle(lev, join(tdir, "levels.pkl"))
+        for mode, out in (("variance", "components.csv"), ("blank", "blank_fixed.csv")):
+            if args.refit or not os.path.exists(join(tdir, out)):
+                subprocess.run(["Rscript", "mixed_models.R", mode, tdir, str(args.cores)], check=True)
     E = pd.read_csv(join(tdir, "electrode_sessions.csv"))
     VC = pd.read_csv(join(tdir, "components.csv"))
-    BL, FX = pd.read_csv(join(tdir, "task_blups.csv")), pd.read_csv(join(tdir, "task_fixed.csv"))
     VC["share"] = VC["var"] / VC.groupby(["lobe", "band"])["var"].transform("sum")
     lobes = [lb for lb in fc.LOBES if lb in set(VC["lobe"])]
 
-    # 1. variance components of single trials (one model per lobe and band), stacked
-    fig, axes = plt.subplots(1, 3, figsize=(18, 4.6), sharey=True)
-    for ax, (b, lab) in zip(axes, BANDS.items()):
-        v = VC[VC["band"] == b].pivot(index="lobe", columns="term", values="share").reindex(lobes).fillna(0)
-        left = np.zeros(len(v))
-        for g, (terms, col) in GROUPS.items():
-            w = v.reindex(columns=terms, fill_value=0).sum(1).to_numpy()
-            ax.barh(range(len(v)), w, left=left, color=col, height=0.75, edgecolor="w", lw=1.5, label=g)
-            for y, (l0, ww) in enumerate(zip(left, w)):
-                if ww >= 0.06:
-                    ax.text(l0 + ww / 2, y, f"{ww:.0%}", ha="center", va="center", fontsize=11,
-                            color="k" if col in ("#f2c12e", "#d9d9d9") else "w")
-            left += w
-        nn = VC[VC["band"] == b].groupby("lobe")[["nsub", "nel"]].first().reindex(v.index)
-        for y, r_ in enumerate(nn.itertuples()):
-            ax.text(1.01, y, f"{r_.nsub}/{r_.nel}", va="center", fontsize=9, color="0.35")
-        ax.set_yticks(range(len(v)), [f"$\\bf{{{l.capitalize()}}}$" for l in v.index], fontsize=12); ax.invert_yaxis()
-        ax.set_xlim(0, 1); ax.set_title(lab, fontsize=14); ax.set_xlabel("Share of single-trial variance", fontsize=12)
-        ax.tick_params(axis="x", labelsize=11)
-        ax.spines[["top", "right"]].set_visible(False)
-    h, l = axes[0].get_legend_handles_labels()
-    fig.legend(h, l, frameon=False, fontsize=12, ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.08))
-    fig.text(0.995, 0.02, "n = subjects / electrodes", ha="right", fontsize=9, color="0.35")
-    fig.tight_layout(rect=(0, 0, 1, 0.84)); fig.savefig(join(args.out_dir, "variance_components.png"), dpi=200, bbox_inches="tight"); plt.close(fig)
+    # 1. variance components of single events (one model per lobe and band), stacked; power and latency apart
+    for name, bands in (("variance_components_power", ["alpha", "high_gamma"]), ("variance_components_latency", ["latency"])):
+        fig, axes = plt.subplots(1, len(bands), figsize=(6.5 * len(bands), 4.6), sharey=True, squeeze=False)
+        axes = axes[0]
+        for ax, (b, lab) in zip(axes, [(b, BANDS[b]) for b in bands]):
+            v = VC[VC["band"] == b].pivot(index="lobe", columns="term", values="share").reindex(lobes).fillna(0)
+            left = np.zeros(len(v))
+            for g, (terms, col) in GROUPS.items():
+                w = v.reindex(columns=terms, fill_value=0).sum(1).to_numpy()
+                ax.barh(range(len(v)), w, left=left, color=col, height=0.75, edgecolor="w", lw=1.5, label=g)
+                for y, (l0, ww) in enumerate(zip(left, w)):
+                    if ww >= 0.06:
+                        ax.text(l0 + ww / 2, y, f"{ww:.0%}", ha="center", va="center", fontsize=11,
+                                color="k" if col in ("#f2c12e", "#d9d9d9") else "w")
+                left += w
+            nn = VC[VC["band"] == b].groupby("lobe")[["nsub", "nel"]].first().reindex(v.index)
+            for y, r_ in enumerate(nn.itertuples()):
+                ax.text(1.01, y, f"{r_.nsub}/{r_.nel}", va="center", fontsize=9, color="0.35")
+            ax.set_yticks(range(len(v)), [f"$\\bf{{{l.capitalize()}}}$" for l in v.index], fontsize=12)
+            ax.set_xlim(0, 1); ax.set_title(lab, fontsize=14); ax.set_xlabel("Share of variance across word events", fontsize=12)
+            ax.tick_params(axis="x", labelsize=11)
+            ax.spines[["top", "right"]].set_visible(False)
+        axes[0].invert_yaxis()   # shared y: once for all panels
+        h, l = axes[0].get_legend_handles_labels()
+        fig.legend(h, l, frameon=False, fontsize=12, ncol=3 if len(bands) > 1 else 2, loc="upper center", bbox_to_anchor=(0.5, 1.08))
+        fig.text(0.995, 0.02, "n = subjects / electrodes", ha="right", fontsize=9, color="0.35")
+        fig.tight_layout(rect=(0, 0, 1, 0.84)); fig.savefig(join(args.out_dir, f"{name}.png"), dpi=200, bbox_inches="tight"); plt.close(fig)
 
-    # 2. task effects: serial position and list number estimates
+    # 2. task effects: per level, deviations from each subject's own mean; per-subject slopes vs 0
+    lev = pd.read_pickle(join(tdir, "levels.pkl"))
     fig, axes = plt.subplots(3, 2, figsize=(10, 8.5), sharex="col")
+    trend = []
     for i, (b, lab) in enumerate(BANDS.items()):
         for k, (term, xl) in enumerate((("sp", "Serial position"), ("list", "List number"))):
             ax = axes[i, k]
             for lb in lobes:
-                d = BL[(BL["band"] == b) & (BL["lobe"] == lb) & (BL["term"] == term)].sort_values("level")
-                ax.plot(d["level"], d["est"], "o-", ms=3, color=fc.LOBE_COLORS[lb], label=lb.capitalize())
-                ax.fill_between(d["level"], d["est"] - d["se"], d["est"] + d["se"], color=fc.LOBE_COLORS[lb], alpha=0.15, lw=0)
+                v = np.array([sm / np.where(n >= 5, n, np.nan) for (s_, l_, b_, t_), (sm, n) in lev.items() if l_ == lb and b_ == b and t_ == term])
+                v = v[np.isfinite(v).sum(1) >= 3]
+                if len(v) < 5:
+                    continue
+                v -= np.nanmean(v, 1, keepdims=True)
+                ns = np.isfinite(v).sum(0); sh = ns >= 5
+                mu = np.nanmean(v[:, sh], 0); ci = np.nanstd(v[:, sh], 0, ddof=1) / np.sqrt(ns[sh]) * tdist.ppf(0.975, ns[sh] - 1)
+                ax.plot(np.flatnonzero(sh), mu, "o-", ms=3, color=fc.LOBE_COLORS[lb], label=lb.capitalize())
+                ax.fill_between(np.flatnonzero(sh), mu - ci, mu + ci, color=fc.LOBE_COLORS[lb], alpha=0.15, lw=0)
+                sl = [np.polyfit(np.flatnonzero(np.isfinite(r_)), r_[np.isfinite(r_)], 1)[0] for r_ in v]
+                trend.append({"measure": b, "term": term, "lobe": lb, "n": len(sl), "slope": np.mean(sl), "p": ttest_1samp(sl, 0).pvalue})
             ax.axhline(0, color="0.5", lw=0.8); ax.spines[["top", "right"]].set_visible(False)
             axes[-1, k].set_xlabel(xl)
-        axes[i, 0].set_ylabel(lab.split("\n")[0] + ("\n(deviation, ms)" if b == "latency" else "\n(deviation, log power)"))
+        axes[i, 0].set_ylabel(lab.split("\n")[0] + ("\n(deviation, ms)" if b == "latency" else "\n(deviation, Cohen's d)"))
     axes[0, 0].legend(frameon=False, fontsize=7, ncol=2)
     fig.tight_layout(); fig.savefig(join(args.out_dir, "task_effects.png"), dpi=200); plt.close(fig)
+    trend = pd.DataFrame(trend); trend["q"] = multipletests(trend["p"], method="fdr_bh")[1]
+    trend.to_csv(join(tdir, "task_trends.csv"), index=False)
 
-    # 3. alpha vs high gamma: trial by trial vs across electrodes
+    # 3. alpha vs high gamma: event by event; across electrodes, signed and in magnitude; prevalence
     er = E.groupby(["subject", "electrode", "lobe"], as_index=False)["r_trial"].mean().rename(columns={"r_trial": "r"})
     ae = E.groupby(["subject", "lobe", "electrode"], as_index=False)[["d_alpha", "d_hg"]].mean()
-    acr = pd.DataFrame([{"subject": s_, "lobe": lb, "r": np.corrcoef(g["d_alpha"], g["d_hg"])[0, 1]}
+    acr = pd.DataFrame([{"subject": s_, "lobe": lb, "r": np.corrcoef(g["d_alpha"], g["d_hg"])[0, 1],
+                         "r_abs": np.corrcoef(g["d_alpha"].abs(), g["d_hg"].abs())[0, 1]}
                         for (s_, lb), g in ae.groupby(["subject", "lobe"]) if len(g) >= 5])
-    fig, ax = plt.subplots(figsize=(8, 3.8))
-    x0 = np.arange(len(fc.LOBES))
-    for k, (dd, lab, col) in enumerate(((er, "Across trials (per electrode)", "C3"),
-                                        (acr, "Across electrodes (per subject)", "0.45"))):
-        fc.box_dots(ax, [dd.loc[dd["lobe"] == l, "r"].dropna() for l in fc.LOBES], x0 + (k - 0.5) * 0.4,
-                    [col] * len(fc.LOBES), width=0.34)
-        ax.plot([], [], "s", color=col, alpha=0.5, ms=9, label=lab)
-    # per lobe: subjects' mean Fisher z vs 0 (one-sample t), BH-FDR over both measures x lobes
+    mag = acr.assign(r=acr["r_abs"])
+    measures = {"across events": er, "across electrodes": acr, "across electrodes, magnitude": mag}
     cst = pd.DataFrame([{"measure": k, "lobe": lb, "n": len(z), "r": np.tanh(z.mean()), "p": ttest_1samp(z, 0).pvalue}
-                        for k, dd in (("across trials", er), ("across electrodes", acr)) for lb in fc.LOBES
+                        for k, dd in measures.items() for lb in fc.LOBES
                         if len(z := np.arctanh(dd[dd["lobe"] == lb].groupby("subject")["r"].mean().clip(-0.999, 0.999))) >= 5])
     cst["q"] = multipletests(cst["p"], method="fdr_bh")[1]
     cst.to_csv(join(tdir, "alpha_hg_coupling_stats.csv"), index=False)
-    for k, kk in enumerate(("across trials", "across electrodes")):
-        for r_ in cst[cst["measure"] == kk].itertuples():
-            stars = "***" if r_.q < .001 else "**" if r_.q < .01 else "*" if r_.q < .05 else "n.s."
-            ax.text(fc.LOBES.index(r_.lobe) + (k - 0.5) * 0.4, 1.02, stars, ha="center", va="bottom", fontsize=8)
-    ax.axhline(0, color="0.5", lw=0.8); ax.set_xticks(x0, [l.capitalize() for l in fc.LOBES], rotation=30)
-    ax.set_ylabel("r, alpha vs high-gamma response"); ax.set_ylim(-1, 1.12); ax.legend(frameon=False, fontsize=8, loc="lower right")
-    ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout(); fig.savefig(join(args.out_dir, "alpha_hg_coupling.png"), dpi=200); plt.close(fig)
+    x0 = np.arange(len(fc.LOBES))
+    for name, panels, size in (("alpha_hg_across_events", (("across events", "Across word events (per electrode)", "C3"),), (6.5, 3.4)),
+                               ("alpha_hg_across_electrodes", (("across electrodes", "Signed Cohen's d", "0.45"),
+                                                               ("across electrodes, magnitude", "|Cohen's d|", "C4")), (8, 3.8))):
+        fig, ax = plt.subplots(figsize=size)
+        off_ = (np.arange(len(panels)) - (len(panels) - 1) / 2) * 0.4
+        for dx, (kk, lab, col) in zip(off_, panels):
+            dd = measures[kk]
+            fc.box_dots(ax, [dd.loc[dd["lobe"] == l, "r"].dropna() for l in fc.LOBES], x0 + dx, [col] * len(fc.LOBES), width=0.34)
+            ax.plot([], [], "s", color=col, alpha=0.5, ms=9, label=lab)
+            for r_ in cst[cst["measure"] == kk].itertuples():
+                stars = "***" if r_.q < .001 else "**" if r_.q < .01 else "*" if r_.q < .05 else "n.s."
+                ax.text(fc.LOBES.index(r_.lobe) + dx, 1.02, stars, ha="center", va="bottom", fontsize=8)
+        ax.axhline(0, color="0.5", lw=0.8); ax.set_xticks(x0, [l.capitalize() for l in fc.LOBES], rotation=30)
+        ax.set_ylabel("r, alpha vs high-gamma response"); ax.set_ylim(-1, 1.12)
+        ax.legend(frameon=False, fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2)
+        ax.spines[["top", "right"]].set_visible(False)
+        fig.tight_layout(); fig.savefig(join(args.out_dir, f"{name}.png"), dpi=200); plt.close(fig)
+    pr = E.groupby(["lobe", "electrode"], as_index=False)[["n", "pa_sum", "pa_sq", "pg_sum", "pg_sq"]].sum()
+    for k, sm, sq in (("alpha", "pa_sum", "pa_sq"), ("high_gamma", "pg_sum", "pg_sq")):
+        tv = (pr[sm] / pr["n"]) / np.sqrt((pr[sq] - pr[sm] ** 2 / pr["n"]) / (pr["n"] - 1) / pr["n"])
+        q = multipletests(2 * tdist.sf(np.abs(tv), pr["n"] - 1), method="fdr_bh")[1]
+        pr[k] = np.where(q >= 0.05, "none", np.where(tv > 0, "up", "down"))
+    prev = pr.groupby("lobe").apply(lambda d: pd.Series({
+        "n": len(d), "neither": ((d["alpha"] == "none") & (d["high_gamma"] == "none")).mean(),
+        "alpha_only": ((d["alpha"] != "none") & (d["high_gamma"] == "none")).mean(),
+        "hg_only": ((d["alpha"] == "none") & (d["high_gamma"] != "none")).mean(),
+        "both": ((d["alpha"] != "none") & (d["high_gamma"] != "none")).mean(),
+        "alpha_down_hg_up": ((d["alpha"] == "down") & (d["high_gamma"] == "up")).mean(),
+        "alpha_up_hg_up": ((d["alpha"] == "up") & (d["high_gamma"] == "up")).mean()}), include_groups=False)
+    prev.to_csv(join(tdir, "prevalence.csv"))
+
+    # 4. recovery from the previous word's offset
+    off = pd.read_pickle(join(tdir, "offset.pkl"))
+    tb = (np.arange(OFFSET_MAX_MS // OFFSET_BIN_MS) + 0.5) * OFFSET_BIN_MS
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    for ax, (k, lab) in zip(axes, (("high_gamma", "High-gamma envelope\nvs electrode's word-off mean"),
+                                   ("alpha", "Alpha log power\nvs session mean (window centre)"))):
+        for lb in lobes:
+            v = np.array([sm / np.where(n >= 5, n, np.nan) for (s_, l_, k_), (sm, n) in off.items() if l_ == lb and k_ == k])
+            if len(v) < 5:
+                continue
+            ns = np.isfinite(v).sum(0)
+            mu = np.nanmean(v, 0); ci = np.nanstd(v, 0, ddof=1) / np.sqrt(ns) * tdist.ppf(0.975, np.maximum(ns - 1, 1))
+            sh = ns >= 5
+            ax.plot(tb[sh], mu[sh], color=fc.LOBE_COLORS[lb], lw=1.8, label=f"{lb.capitalize()} (n={len(v)})")
+            ax.fill_between(tb[sh], (mu - ci)[sh], (mu + ci)[sh], color=fc.LOBE_COLORS[lb], alpha=0.15, lw=0)
+        ax.axhline(0, color="0.5", lw=0.8); ax.spines[["top", "right"]].set_visible(False)
+        ax.set_xlabel("Time since the previous word disappeared (ms)"); ax.set_ylabel(lab)
+    axes[0].legend(frameon=False, fontsize=8)
+    fig.suptitle("Word-off window re-aligned to the previous word's offset (responsive electrodes)", fontsize=10)
+    fig.tight_layout(); fig.savefig(join(args.out_dir, "offset_recovery.png"), dpi=200); plt.close(fig)
+
+    # 5. blank interval and the neighbouring words
+    BF = pd.read_csv(join(tdir, "blank_fixed.csv"))
+    co = BF[BF["term"].isin(["prev_z", "next_z", "prev_z:blank_z"])].copy()
+    co["p"] = 2 * norm.sf(np.abs(co["est"] / co["se"]))
+    co["q"] = multipletests(co["p"], method="fdr_bh")[1]
+    co.to_csv(join(tdir, "blank_coefficients.csv"), index=False)
+    terms = {"prev_z": "Previous word's response", "prev_z:blank_z": "Previous word x blank length",
+             "next_z": "Blank after the word\n(control)"}
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True, layout="constrained")
+    for ax, (b, lab) in zip(axes, (("alpha", "Alpha"), ("high_gamma", "High gamma"))):
+        for k, tm in enumerate(terms):
+            for jj, lb in enumerate(lobes):
+                r_ = co[(co["band"] == b) & (co["lobe"] == lb) & (co["term"] == tm)]
+                if len(r_):
+                    r_ = r_.iloc[0]; y = k + (jj - (len(lobes) - 1) / 2) * 0.12
+                    ax.errorbar(r_["est"], y, xerr=1.96 * r_["se"], fmt="o", ms=4, color=fc.LOBE_COLORS[lb],
+                                mfc=fc.LOBE_COLORS[lb] if r_["q"] < 0.05 else "w", lw=1, label=lb.capitalize() if k == 0 else None)
+        ax.axvline(0, color="0.5", lw=0.8); ax.set_yticks(range(len(terms)), list(terms.values())); ax.set_title(lab)
+        ax.set_xlabel("Coefficient (Cohen's d units per SD; filled: FDR q < .05)"); ax.spines[["top", "right"]].set_visible(False)
+        ax.xaxis.set_major_locator(plt.MaxNLocator(4))
+    axes[0].invert_yaxis(); axes[1].legend(frameon=False, fontsize=8, loc="lower right")
+    fig.savefig(join(args.out_dir, "blank_interval.png"), dpi=200); plt.close(fig)
 
     pd.set_option("display.width", 200)
-    print("\n[variance components, % of single-trial variance]\n",
+    print("\n[variance components, % of single-event variance]\n",
           (VC.pivot_table(index=["band", "term"], columns="lobe", values="share") * 100)[lobes].round(2).to_string())
-    print("\n[fixed effects]\n", FX[FX["term"] != "(Intercept)"].round(4).to_string(index=False))
-    print("\n[alpha-hg r] across trials, median by lobe:", er.groupby("lobe")["r"].median().round(3).to_dict())
+    print("\n[task trends]\n", trend.round(4).to_string(index=False))
+    print("\n[prevalence, all electrodes]\n", prev.round(3).to_string())
+    print("\n[alpha-hg r] across events, median by lobe:", er.groupby("lobe")["r"].median().round(3).to_dict())
     print("            across electrodes:", acr.groupby("lobe")["r"].median().round(3).to_dict())
+    print("            magnitude:", acr.groupby("lobe")["r_abs"].median().round(3).to_dict())
     print("            tests (subjects' mean r vs 0):\n", cst.round(4).to_string(index=False))
+    print("\n[blank] coefficients:\n", co[["lobe", "band", "term", "est", "se", "q"]].round(4).to_string(index=False))
 
 
 if __name__ == "__main__":

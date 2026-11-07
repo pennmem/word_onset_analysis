@@ -7,6 +7,33 @@ earlier than the last entry below is undocumented.
 
 ---
 
+## 2026-11-06 — variance analyses in Cohen's d; DeHaan's model terms
+
+- `plot_variance_structure.py`: power response per word event = (word-on power - mean word-off power) / Cohen's d's pooled SD (mean over a session's events = the cached d, verified to 1e-7); replaces log power. Outlier rule unchanged. `same` category and blank length removed from the model.
+- `mixed_models.R variance`: DeHaan 2026 ch. 3's terms (item, sp, list, subject, subject:item, session, subject:sp, list:sp, session:list, session:sp) plus electrode, electrode in session, word event. Electrode x serial position and fixed effects dropped. Log-power tables backed up in scratch (`variance_logpower_2026-11-06`).
+- Task effects (`task_effects.png`, `task_trends.csv`): no longer the model's shrunk estimates. All electrodes (latency: responsive); per position / list, deviations from each subject's mean, 95% CI across subjects; per-subject slopes vs 0, BH-FDR.
+- Coupling figure split into `alpha_hg_across_electrodes.png` (now with |d|) and `alpha_hg_across_events.png`; `prevalence.csv` from all electrodes (paired t).
+- Proposal reorganized: Aim 1 the variance split, Aim 2 the stable part, Aim 3 the word-to-word part; text corrections; open items moved to TODO.md.
+
+## 2026-11-06 — full-cohort variance results in the proposal
+
+- Full run finished (339 subjects for power, 175 for latency; up to 5 electrodes per subject × lobe). Proposal Aims 1 and 3 now quote these numbers and the blank-model result: a larger previous response predicts a larger current one, with no blank-length interaction and a null next-blank control, so carry-over/drift, not adaptation.
+- Proposal captions shortened to one line per panel.
+- `task_effects.png`: bands changed from +/-1 SE to 95% intervals (1.96 x the model's conditional SD); caption updated. Open issues moved from the proposal to TODO.md, with a data-coverage list.
+- Wording: nested terms as "in" ("Electrode in session", "List in session"), "Word event" for the shared component and in the proposal text; residual stays "(electrode, event)".
+- Terminology: "trial" (a list in FR) -> "event" for word presentations in the proposal, figure labels ("Event", "Residual (electrode x event)", "Share of variance across events", "Across events (per electrode)") and the docstrings/comments of plot_variance_structure.py, plot_variability.py, mixed_models.R. Column/file names (`trials.csv`, `r_trial`, `trial_pow_*`) unchanged.
+- Proposal for the PI: blank-model and offset-recovery figures and text dropped (to be recomputed with the paper's measures, TODO); status tags removed; variance components split into `variance_components_power.png` (next to the power boxplots, Fig. 1B) and `variance_components_latency.png` (next to latency, Fig. 2B); coupling and electrode reliability stacked; open issues now note log power and the missing DeHaan terms. Fixed inverted lobe order with two shared-y panels.
+- Proposal figure order: paper power boxplots (figS1), latency, variance components, coupling + electrode reliability combined (A/B), task effects, blank model, offset recovery, anticipation.
+- `blank_interval.png`: only the coefficient panels remain (the per-design blank-bin curves are gone; the bins stay in the model). Unused `BLANK_BIN_MS`/`DESIGNS` constants removed.
+- `variance_components.png`: legend label shortened to "Word presentation".
+- `blank_interval.png`: constrained layout (the coefficient labels had widened every column gap); 4 x ticks on the coefficient axis. The caption now says bins are relative to the shortest bin.
+
+## 2026-11-05 — blank interval and latency in the variance framework; full-cohort run
+
+- `plot_variance_structure.py` sections 4-5 replace `plot_blank_interval.py` (deleted): (4) the word-off window re-aligned to time since the previous word's offset (offset response and recovery; high-gamma envelope at responsive electrodes, alpha window means); (5) `mixed_models.R blank`: response ~ 50 ms blank bins per design + previous word's response x blank length + the blank after the word (control) + random subject / electrode / electrode x session / serial position / session x list; Wald CIs, BH-FDR.
+- Design from the experiment (FR1 / catFR1: 750-1000 ms, pyFR: 800-1200 ms), not the longest blank: measured FR1 blanks reach ~1035 ms (screen timing), 40 ms tolerance, longer blanks in the last bin.
+- Models: electrode cap applied in Python (`--max-electrodes`, seed 0); the latency model draws its own electrodes among responsive ones (`in_power` flags the power-model electrodes); `--cores`; a fit with < 5 subjects or an lmer error is skipped with a message instead of failing the run.
+
 ## 2026-11-05 — variance structure as one mixed model; boxplots with dots
 
 - `mixed_models.R variance` (run by `plot_variance_structure.py`): per lobe and band, DeHaan 2026 ch. 3's random-intercept model on the single-trial response: subject, electrode, electrode x session, serial position, electrode x serial position, list, session x list, word (item), word presentation (shared by a lobe's electrodes), blank length + same category (fixed). Replaces the method-of-moments `partition`, the OLS `task_design` and its chance-fit correction; the time / frequency subject-electrode-session shares use the same model on electrode-session means.

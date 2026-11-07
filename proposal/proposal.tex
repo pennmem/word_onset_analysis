@@ -6,7 +6,7 @@
 \usepackage[colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue]{hyperref}
 \setlength{\parskip}{4pt}
 
-\title{Sources of variability in the human word response\\[2pt]\large Research proposal (draft)}
+\title{Harry Potter and the Neural Heterogeneity of Word Response\\[2pt]\large A proposal to fill existing gaps}
 \author{Juee Naik}
 \date{\today}
 
@@ -14,100 +14,89 @@
 \maketitle
 
 \section*{Gap}
-Large iEEG studies of free recall describe the average response to a word: high gamma rises first in visual
+Studies of free recall describe the average response to a word: high gamma rises first in visual
 cortex and later in prefrontal cortex \citep{Burke_2014a,Kucewicz_2019}, and theta, alpha/beta and gamma power
-are induced at largely separate sites, in separate sequences \citep[``mosaic''; 139 subjects;][]{Marks_2021}.
-These studies average over trials and treat electrodes as samples of a region; \citet{Marks_2021} also
-normalize each trial within its own epoch rather than against a pre-word baseline. How much of the response
-differs between subjects, electrodes, sessions and trials, whether its spectral components are independent
-beyond space, and what changes it from trial to trial have not been measured. With 362 subjects, 1009 sessions
-and ${\sim}$300 words per session, this dataset can answer these questions. Memory effects are out of scope
-\citep[see][]{DeHaan_2026}.
+are induced at largely separate sites, in separate sequences \citep{Marks_2021}.
+These studies average over word events and treat electrodes as samples of a region; \citet{Marks_2021} also
+normalize each word event within its own epoch rather than against a pre-word baseline. How much of the response
+differs between subjects, electrodes, sessions and word events, which part is a stable property of a site, and
+what changes it from one word event to the next have not been measured. With 361 subjects, 1007 sessions
+and ${\sim}$200 words per session, this dataset can answer these questions. The contribution of task structure
+towards the memory-related component has been identified by \citet{DeHaan_2026}, and the mixed-effects model used
+here draws from these analyses.
 
 \section*{Aims}
-\textbf{Aim 1. Where does the variability sit?} Split the single-trial word response (word on vs.\ the
-electrode's usual pre-word level) into subject, electrode, session, task and trial components per region,
-with one random-intercept model as \citet{DeHaan_2026} used for recall. \emph{Preliminary (40 subjects,
-5 electrodes per subject and lobe; Fig.~\ref{fig:vc}):} most single-trial variance is private to one
-electrode on one trial (alpha 61--87\%, high gamma 38--79\%). The next largest part is a trial's deviation
-shared by all of a lobe's electrodes (alpha 9--34\%, high gamma 4--15\%), then list-to-list drift within a
-session (2--6\%). Task structure explains almost none of it: serial position $\le$0.2\%, its
-electrode-specific form $\le$0.5\%, list number, the word itself, blank length and category $\le$0.2\%.
-Stable differences are largest in occipital high gamma (subject 15\%, electrode 26\%,
-electrode $\times$ session 14\%); for alpha outside occipital cortex they are near zero.
+\textbf{Aim 1. How much of the response is stable, and how much changes from one word event to the next?} Split
+the response to each word event (word on vs.\ word off, in units of Cohen's $d$) into subject, electrode, session,
+task and word-event components per region, with the random-intercept model \citet{DeHaan_2026} used for recall plus
+electrode, electrode in session and word event. \emph{Preliminary (40-subject pilot, up to 5 electrodes per subject
+and lobe; Figs.~\ref{fig:power}B, \ref{fig:latency}B):} most variance across word events is unique to an electrode
+during a word event (alpha 69--88\%, high gamma 58--90\%, latency 79--94\%). The next largest part is a word event's
+deviation shared by all of a lobe's electrodes (alpha 8--27\%, high gamma 4--16\%, latency 4--14\%). Session, list
+in session and task structure are each small ($\le$3\%). Stable differences are largest in occipital high gamma
+(subject 7\%, electrode 23\%, electrode in session 4\%); for alpha outside occipital cortex subject and electrode
+together are $\le$2\%, and for latency $\le$8\%.
 
-\textbf{Aim 2. What is the stable part?} Which electrodes respond, in which band, and whether that is a
-fixed property of an electrode across sessions. \emph{Preliminary:} outside occipital cortex 65--80\% of
-electrodes show neither an alpha nor a high-gamma response (paired $t$ over trials, FDR 0.05); an alpha
-decrease with a high-gamma increase is common only in occipital cortex (21\% of electrodes, 1--2\%
-elsewhere). Which electrodes respond strongly replicates between session halves (Fig.~\ref{fig:elrel};
-median $r$ = 0.90 in occipital high gamma).
+\textbf{Aim 2. Which electrodes respond, in which band, and do they covary?} Outside
+occipital cortex 68--76\% of electrodes show neither an alpha nor a high-gamma response, against 35\% in occipital
+cortex (paired $t$ over word events, FDR 0.05); 31\% of occipital electrodes respond in both bands, 5--11\%
+elsewhere. Which electrodes respond strongly within a band replicates between session halves
+(Fig.~\ref{fig:stable}A; median $r$ = 0.90 in occipital high gamma, 0.80 in occipital alpha, 0.20--0.59 elsewhere).
+Across electrodes the bands share the size of the response more than its direction (Fig.~\ref{fig:stable}B): $r$ of
+$|d|$ is 0.46 in occipital cortex and 0.13--0.21 elsewhere, while $r$ of signed $d$ is between $-0.11$ and 0.15. In
+occipital cortex, where high gamma rises, alpha falls at 19\% of electrodes and rises at 8\%. Planned: whether an
+electrode's latency replicates, and the anatomy of these response types within a region.
 
-\textbf{Aim 3. Are alpha and high gamma independent beyond space, and what moves them from trial to trial?}
-\citet{Marks_2021} found the bands at separate sites. \emph{Preliminary:} at the same electrode they are
-also independent trial by trial (Fig.~\ref{fig:coupling}; median $r$ between $-0.04$ and 0.06 in every
-lobe). Along the list the high-gamma response shrinks while alpha rises (Fig.~\ref{fig:mod}), and the
-high-gamma peak drops without a consistent change in latency (Fig.~\ref{fig:gain}). The blank interval has
-small occipital effects (Fig.~\ref{fig:wait}) that can be tested against recovery from adaptation
-\citep{Groen_2022} vs.\ temporal expectation. Planned: what the shared trial-to-trial component is
-(arousal, attention, or a common reference), single-trial latency, and the same tests per response type.
+\textbf{Aim 3. What are the word-to-word effects?} Task structure effects are small next
+to the variability of single word events (Aim 1), but are still clear when pooled across events. Along the list high gamma falls in every lobe (Fig.~\ref{fig:word}A;
+$-0.004$ to $-0.012$ $d$ per position) and alpha rises in every lobe but the hippocampus (0.004--0.005 $d$ per
+position). Across lists alpha rises in frontal, temporal, occipital and limbic cortex, and high gamma has no trend.
+Latency shortens along the list only in frontal and limbic cortex (0.7--1 ms per position), with no trend across
+lists (all trends: per-subject slopes vs.\ 0, FDR 0.05). \citet{Marks_2021} found the bands at separate sites; at the
+same electrode they are also nearly independent across word events (Fig.~\ref{fig:word}B; subjects' mean $r$ between
+$-0.01$ and 0.11). 
 
-\section*{Open issues}
-\begin{itemize}\setlength{\itemsep}{0pt}
-\item Trial-level artifact rejection must be added to the main pipeline (one artifact trial distorts
-Fig.~\ref{fig:latency}); the preliminary analyses drop robust outlier trials.
-\item The model fit is preliminary (5 random electrodes per subject and lobe, no confidence intervals); the
-full fit and Wald or bootstrap intervals are next.
-\item The session share includes the sampling noise of each session's average; split-half reliability will
-separate it. Over time and frequency the split needs per-trial time--frequency power (not cached).
-\end{itemize}
+Planned: what the shared word-event component is (arousal, attention, or a common reference), the
+blank before a word against the neighbouring words (recovery from adaptation, \citealp{Groen_2022}, vs.\ temporal
+expectation; Fig.~\ref{fig:wait}), and latency per word event.
 
-\section*{Figures (most to least relevant)}
-Status in brackets: \emph{prelim.} = 40 random subjects; \emph{full} = all subjects; \emph{paper} = from the
-word-onset paper.
+Differences between locations are stable but large only in occipital high gamma; elsewhere most of the
+variance is from one word event to the next.
+
+\section*{Figures}
 
 \begin{figure}[!h]\centering
-\includegraphics[width=\linewidth]{img/variance_components.png}
-\caption{[prelim.] Variance components of the single-trial response (alpha and high-gamma power, and
-high-gamma half-max latency at responsive electrodes), one random-intercept model per lobe and measure (as \citealp{DeHaan_2026} ch.~3 for recall; up to 5 random electrodes per subject). Task: serial
-position, its electrode-specific form, list number, the word, blank length and category together. Word
-presentation: a trial's deviation shared by all of a lobe's electrodes; residual: what is left per electrode
-and trial.}
-\label{fig:vc}
+\textbf{A}\par\includegraphics[width=0.75\linewidth]{img/figS1_power_subjects.png}\par\medskip
+\textbf{B}\par\includegraphics[width=0.9\linewidth]{img/variance_components_power.png}
+\caption{(A) Power change at word onset (Cohen's $d$, word on vs.\ off; dots: subjects). (B) Variance components of the response to each word event, one mixed model per lobe (Aim 1; 40-subject pilot). Word event: variance shared by all of a lobe's electrodes on the same word event.}
+\label{fig:power}
 \end{figure}
 
 \begin{figure}[!h]\centering
-\includegraphics[width=0.75\linewidth]{img/alpha_hg_coupling.png}
-\caption{[prelim.] Alpha vs.\ high-gamma response: Pearson $r$ across trials at each electrode (red; dots:
-electrodes) and across a lobe's electrodes within each subject (grey; dots: subjects). Above: subjects' mean
-$r$ (Fisher $z$) vs.\ 0, one-sample $t$, BH-FDR over 12 tests.}
-\label{fig:coupling}
+\textbf{A}\par\includegraphics[width=0.75\linewidth]{img/fig4b_latency_fine.png}\par\medskip
+\textbf{B}\par\includegraphics[width=0.5\linewidth]{img/variance_components_latency.png}
+\caption{(A) High-gamma half-max latency per region (the supramarginal spike at 650 ms is one artifact word event). (B) Variance components of latency per word event (responsive electrodes; 40-subject pilot).}
+\label{fig:latency}
 \end{figure}
 
 \begin{figure}[!h]\centering
-\includegraphics[width=0.6\linewidth]{img/electrode_reliability.png}
-\caption{[full] The same electrodes respond strongly in both halves of a subject's sessions: $r$ of
-Cohen's $d$ (word on vs.\ off) across a lobe's electrodes between session halves (dots: subjects).}
-\label{fig:elrel}
+\textbf{A}\par\includegraphics[width=0.6\linewidth]{img/electrode_reliability.png}\par\medskip
+\textbf{B}\par\includegraphics[width=0.75\linewidth]{img/alpha_hg_across_electrodes.png}
+\caption{(A) Electrode test-retest: $r$ of electrodes' Cohen's $d$ between session halves (dots: subjects). (B) Alpha vs.\ high gamma across a lobe's electrodes: $r$ of Cohen's $d$ and of $|d|$ per subject (dots); stars: subjects' mean $r$ vs.\ 0, FDR.}
+\label{fig:stable}
 \end{figure}
 
 \begin{figure}[!h]\centering
-\includegraphics[width=0.8\linewidth]{img/task_effects.png}
-\caption{[prelim.] Task effects from the model of Fig.~\ref{fig:vc}: estimate ($\pm$ SE) per serial
-position and list number, per lobe, for alpha and high-gamma power and high-gamma latency.}
-\label{fig:mod}
+\textbf{A}\par\includegraphics[width=0.8\linewidth]{img/task_effects.png}\par\medskip
+\textbf{B}\par\includegraphics[width=0.65\linewidth]{img/alpha_hg_across_events.png}
+\caption{(A) Serial-position and list effects: deviation from each subject's own mean (all electrodes; latency: responsive electrodes); mean and 95\% CI across subjects. (B) Alpha vs.\ high gamma across word events: $r$ per electrode (dots); stars: subjects' mean $r$ vs.\ 0, FDR.}
+\label{fig:word}
 \end{figure}
 
 \begin{figure}[!h]\centering
 \includegraphics[width=0.7\linewidth]{img/fig9_anticipation.png}
-\caption{[paper] Occipital high gamma after long vs.\ short blank intervals.}
+\caption{High-gamma response peak after long vs.\ short blanks, per region (stars: FDR; n: subjects).}
 \label{fig:wait}
-\end{figure}
-
-\begin{figure}[!h]\centering
-\includegraphics[width=0.75\linewidth]{img/fig4b_latency_fine.png}
-\caption{[paper] High-gamma latency per region (the supramarginal spike at 650 ms is one artifact trial).}
-\label{fig:latency}
 \end{figure}
 
 \clearpage
