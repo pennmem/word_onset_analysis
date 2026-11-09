@@ -256,8 +256,8 @@ def main() -> None:
     cst["q"] = multipletests(cst["p"], method="fdr_bh")[1]
     cst.to_csv(join(tdir, "alpha_hg_coupling_stats.csv"), index=False)
     x0 = np.arange(len(fc.LOBES))
-    for name, panels, size in (("alpha_hg_across_events", (("across events", "Across word events (per electrode)", "C3"),), (6.5, 3.4)),
-                               ("alpha_hg_across_electrodes", (("across electrodes", "Signed Cohen's d", "0.45"),
+    for name, panels, size in (("alpha_hg_across_events", (("across events", "Across word events (per electrode)", "C2"),), (6.5, 3.4)),
+                               ("alpha_hg_across_electrodes", (("across electrodes", "Signed Cohen's d", "C1"),
                                                                ("across electrodes, magnitude", "|Cohen's d|", "C4")), (8, 3.8))):
         fig, ax = plt.subplots(figsize=size)
         off_ = (np.arange(len(panels)) - (len(panels) - 1) / 2) * 0.4
@@ -269,7 +269,7 @@ def main() -> None:
                 stars = "***" if r_.q < .001 else "**" if r_.q < .01 else "*" if r_.q < .05 else "n.s."
                 ax.text(fc.LOBES.index(r_.lobe) + dx, 1.02, stars, ha="center", va="bottom", fontsize=8)
         ax.axhline(0, color="0.5", lw=0.8); ax.set_xticks(x0, [l.capitalize() for l in fc.LOBES], rotation=30)
-        ax.set_ylabel("r, alpha vs high-gamma response"); ax.set_ylim(-1, 1.12)
+        ax.set_ylabel("r (alpha vs HG response)"); ax.set_ylim(-1, 1.12)
         ax.legend(frameon=False, fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2)
         ax.spines[["top", "right"]].set_visible(False)
         fig.tight_layout(); fig.savefig(join(args.out_dir, f"{name}.png"), dpi=200); plt.close(fig)

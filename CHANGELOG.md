@@ -7,6 +7,20 @@ earlier than the last entry below is undocumented.
 
 ---
 
+## 2026-11-08 — proposal: Prelim/Planned panels; synchrony as Aim 4
+
+- Panel letters top left with (Done) for paper figures and full-data analyses, (Prelim, reason) for the 5-electrode variance fits, (Planned) as empty boxes: Fig. 5B variance split of the pre-stimulus blank alone, Fig. 6C synchrony variance split.
+- Aim 4 (synchrony) from the paper's figures: alpha ciPLV epochs (Fig. 6A) and network replicability by ROI (Fig. 6B, right panel of the paper's Fig. 8 cropped, title removed; session test-retest panel and its sentence dropped).
+- Proposal text and captions: "lobe" -> "ROI"; "cortex" -> "regions".
+- Fig. 6B (PI, 2026-11-09): subject-half replicability replaced by the paper's session test-retest panel (`session_test_retest.png`, left panel of the paper's Fig. 8); Aim 4 quotes its medians.
+- Fig. 5B: planned box for the previous-word (carry-over) model, to be refit with the variance model's random terms + electrode in list; the planned pre-stimulus split is 5C.
+- `alpha_hg_across_{electrodes,events}.png`: y label "r (alpha vs HG response)"; signed d orange, |d| purple, across word events green.
+- Alpha-high gamma across word events moved from Fig. 4B to 3C (Fig. 4 is task effects only); stable-part figure now before latency (power: Figs. 1-2, latency: Fig. 3).
+
+## 2026-11-07 — full-cohort refit in the proposal
+
+- Refit of `mixed_models.R variance` in Cohen's d with DeHaan's terms finished on the full cohort (up to 5 electrodes per subject x lobe; 6.1 h). Proposal Aim 1 and Figs. 1B, 2B now use it instead of the 40-subject pilot; pilot labels removed. Figures redrawn with `--from-csv` (legend above the axes).
+
 ## 2026-11-06 — variance analyses in Cohen's d; DeHaan's model terms
 
 - `plot_variance_structure.py`: power response per word event = (word-on power - mean word-off power) / Cohen's d's pooled SD (mean over a session's events = the cached d, verified to 1e-7); replaces log power. Outlier rule unchanged. `same` category and blank length removed from the model.

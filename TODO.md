@@ -19,7 +19,7 @@
 
 ## Proposal (variability of the word response): to confirm
 Status 2026-11-06. Memory analyses on hold (DeHaan 2026 thesis ch. 3 covers task structure in the SME);
-connectivity stays out of the proposal (Mike decides what goes in the paper). These items are kept here, not
+connectivity is Aim 4 since 2026-11-08 (paper's synchrony figures; variance split planned). These items are kept here, not
 in the proposal text. Every model or analysis choice and its run cost goes to the user before running.
 
 **Data coverage (what does not use all the data yet)**
@@ -32,6 +32,14 @@ in the proposal text. Every model or analysis choice and its run cost goes to th
   sessions as well (99-246 subjects). Inherent to the measures unless the minimum changes.
 
 **Model**
+- PI (2026-11-09): is (1|electrode) collinear with (1|subject)? Electrode is nested in subject, so the two are
+  separable only through subjects with >= 2 electrodes in the ROI. Check: subject-only, electrode-only and both
+  (expect electrode-only's electrode share ~ subject + electrode of the full model, same total); one ROI x band on
+  the 40-subject pilot first (~10-15 min per fit).
+- Planned (Fig. 5C): the same variance split for power in the pre-stimulus blank alone ((word-off power - mean
+  word-off power) / pooled SD per event; word-off = the existing -700..-100 ms window, as DeHaan ch. 4), control for the word-event component. ~6 h for the 12 power fits; confirm before running.
+- Planned (Fig. 5B): previous-word model (mixed_models.R blank) refit with the variance model's 13 random terms +
+  electrode in list (drift vs carry-over); its current 5 random terms predate DeHaan's. Time on the pilot first.
 - Done 2026-11-06: per-event Cohen's d, DeHaan 2026 ch. 3 terms + electrode, electrode in session, word event.
   Single-event d has heavier tails than log power (excess kurtosis alpha 5.1 vs 0.3, high gamma 2.2 vs 0.4): check
   whether the shares depend on the tails (residuals; rank-based or log comparison).
