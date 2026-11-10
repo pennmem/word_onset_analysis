@@ -596,8 +596,8 @@ def run_spectrum_stage(save_root, beh, args, lobe_of):
     os.makedirs(args.out_dir, exist_ok=True)
     st = stats("roi", args.min_electrodes)
     st.to_csv(fc.table_path(join(args.out_dir, f"power_spectrum_{beh}_rois_stats.csv")), index=False)
-    T = st.pivot(index="roi", columns="freq_hz", values="t").reindex(fc.ROI_ORDER)
-    Q = st.pivot(index="roi", columns="freq_hz", values="q").reindex(fc.ROI_ORDER)
+    T = st.pivot(index="roi", columns="freq_hz", values="t").reindex(fc.present_rois(st))
+    Q = st.pivot(index="roi", columns="freq_hz", values="q").reindex(fc.present_rois(st))
     v = float(np.nanmax(np.abs(T.to_numpy()))) or 1.0
     fig, ax = plt.subplots(figsize=(11, 6.5))
     im = ax.imshow(T.to_numpy(), cmap="RdBu_r", vmin=-v, vmax=v, aspect="auto")
@@ -661,9 +661,9 @@ def run_plot_stage(save_root, beh, band, args):
         f"the ROI's electrodes), per ROI:")
     stem = f"roi_power_{beh}_{{band}}"
     fc.write_roi_csvs(args.out_dir, stem.format(band=band), tbl, per_elec, stats)
-    for ci in (False, True):
+    for bars in (False, True):
         fc.band_contrast_figure(args.out_dir, stem, "cohens_d",
-                                f"Power, Cohen's d ({c['hi_label']} vs. {c['lo_label']})", ci=ci)
+                                f"Power, Cohen's d ({c['hi_label']} vs. {c['lo_label']})", bars=bars)
     return tbl
 
 

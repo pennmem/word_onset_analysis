@@ -28,17 +28,20 @@ towards the memory-related component has been identified by \citet{DeHaan_2026},
 here draws from.
 
 \section*{Aims}
-\textbf{Aim 1. How much of the response is stable, and how much changes from one word to the next?} Split
-the response to each word event (word on vs.\ word off, Cohen's $d$ effect size) into subject, electrode, session,
-task and word-event components per region, with a random-intercept model. \emph{Preliminary (up to 5 electrodes per subject and ROI; Figs.~\ref{fig:power}B,
-\ref{fig:latency}B):} most variance across word events is unique to an electrode
+\textbf{Aim 1. How much of the response is stable, and how much changes from one word to the next?} On average,
+occipital high gamma rises at word onset ($d$ = 0.34) and alpha falls ($-0.10$), with smaller changes elsewhere
+(Fig.~\ref{fig:power}A). Split the response to each word event (word on vs.\ word off, Cohen's $d$ effect size) into
+subject, electrode, session, task and word-event components per region, with a random-intercept model.
+\emph{Preliminary (up to 5 electrodes per subject and ROI; Fig.~\ref{fig:power}B, C):} most variance across word events is unique to an electrode
 during a word event (alpha 71--86\%, high gamma 56--89\%, latency 82--94\%). The next largest part is a word event's
 deviation shared by all of an ROI's electrodes (alpha 11--25\%, high gamma 6--15\%, latency 4--13\%). Session, list
 in session and task structure are each small ($\le$3\%). Stable differences are largest in occipital high gamma
 (subject 8\%, electrode 22\%, electrode in session 3\%); for alpha outside occipital regions subject and electrode
-together are $\le$2\%, and for latency $\le$6\%. 
+together are $\le$2\%, and for latency $\le$6\%. Adding the anatomical subregion within a lobe
+(Fig.~\ref{fig:power}B, C) takes about 3\% of occipital high-gamma variance, out of the electrode and subject
+components, none of alpha's, and $\le$2\% of latency's.
 
-Planned: the same split for power in the pre-stimulus blank alone, as a control (Fig.~\ref{fig:wait}C).
+Planned: the same split for power in the pre-stimulus period alone, as a control.
 
 \textbf{Aim 2. Which electrodes respond in which band, and do they covary?} Outside
 occipital regions 68--76\% of electrodes show neither an alpha nor a high-gamma response, against 35\% in occipital
@@ -47,77 +50,67 @@ elsewhere. Which electrodes respond strongly within a band replicates between se
 (Fig.~\ref{fig:stable}A; median $r$ = 0.90 in occipital high gamma, 0.80 in occipital alpha, 0.20--0.59 elsewhere).
 Across electrodes the bands share the size of the response more than its direction (Fig.~\ref{fig:stable}B): $r$ of
 $|d|$ is 0.46 in occipital regions and 0.13--0.21 elsewhere, while $r$ of signed $d$ is between $-0.11$ and 0.15. In
-occipital regions, where high gamma rises, alpha falls at 19\% of electrodes and rises at 8\%. 
+occipital regions, where high gamma rises, alpha falls at 19\% of electrodes and rises at 8\%. \citet{Marks_2021}
+found the bands at separate sites; how they covary depends on the timescale (Fig.~\ref{fig:stable}C). Along the list
+high gamma falls in every ROI ($-0.004$ to $-0.012$ $d$ per position) and alpha rises in every ROI but the
+hippocampus (0.004--0.005 $d$ per position), and in frontal, parietal and occipital regions the two serial-position
+curves are anticorrelated ($r$ = $-0.12$ to $-0.20$), while from one word event to the next the bands are nearly
+independent ($-0.01$ to 0.04). In limbic regions and the hippocampus they are weakly positively related at every
+timescale (0.07--0.13).
 
 Planned: does an electrode's latency replicate, also the anatomy of these response types within a region.
 
-\textbf{Aim 3. What are the word-to-word effects?} Task structure effects are small next
-to the variability of single word events (Aim 1), but are still clear when pooled across events. Along the list high gamma falls in every ROI (Fig.~\ref{fig:word};
-$-0.004$ to $-0.012$ $d$ per position) and alpha rises in every ROI but the hippocampus (0.004--0.005 $d$ per
-position). Across lists alpha rises in frontal, temporal, occipital and limbic regions, and high gamma has no trend.
-Latency shortens along the list only in frontal and limbic regions (0.7--1 ms per position), with no trend across
-lists (per-subject slopes vs.\ 0, FDR 0.05). \citet{Marks_2021} found the bands at separate sites; at the
-same electrode they are also nearly independent across word events (Fig.~\ref{fig:stable}C; subjects' mean $r$ between
-$-0.01$ and 0.11). 
+\textbf{Aim 3. What links one word to the next?} After a long pre-stimulus period the occipital high-gamma peak is larger (Fig.~\ref{fig:wait}A; +0.058,
+FDR 0.05), while occipital high gamma before the word is slightly lower ($-0.010$): the effect
+is in the response, not a pre-stimulus level carried into it. At the same electrode, with serial-position means removed, the previous word's response correlates with the
+current one in every ROI (Fig.~\ref{fig:wait}B; high gamma $r$ = 0.06--0.12, alpha 0.03--0.05), more than the
+response two words back does (by 0.014--0.024 in high gamma and 0.007--0.020 in alpha; paired $t$, FDR 0.05): a
+slow drift plus a carry-over from the previous word. The carry-over does not change with the length of the pre-stimulus period (long
+$-$ short $|\Delta r| \le 0.008$, n.s.), so it does not explain the
+effect of a long pre-stimulus period.
 
-Planned: what the shared word-event component is (arousal, attention, or a common reference), the
-blank before a word against the neighbouring words (recovery from adaptation, \citealp{Groen_2022}, vs.\ temporal
-expectation; Fig.~\ref{fig:wait}), and latency per word event.
+Planned: what the shared word-event component is (arousal, attention, or a common reference), whether the
+effect of a long pre-stimulus period is recovery from adaptation \citep{Groen_2022} or temporal expectation, and latency per word event.
 
 \textbf{Aim 4. Does connectivity between regions vary in the same way?} At word onset alpha ciPLV rises in 9 of 12
 regions, with hubs first in occipital regions (0--400 ms) and then in limbic, parietal, frontal and temporal regions
-(Fig.~\ref{fig:sync}A). Connectivity is less reliable across sessions than power (median $r$ 0.19
-for alpha ciPLV and 0.14 for high-gamma AEC-c, vs.\ 0.67 and 0.81 for power; Fig.~\ref{fig:sync}B).
+(Fig.~\ref{fig:sync}A).
 
 Planned: the variance split of Aim 1 for
-synchrony (Fig.~\ref{fig:sync}C).
+synchrony (Fig.~\ref{fig:sync}B).
 
-Differences between locations are stable but large only in occipital high gamma; elsewhere most of the
+\textbf{Summary.} Differences between locations are stable but large only in occipital high gamma; elsewhere most of the
 variance is from one word event to the next.
 
 \section*{Figures}
 
 \begin{figure}[!h]\centering
 \panel{A}{Done}\includegraphics[width=0.75\linewidth]{img/figS1_power_subjects.png}\par\medskip
-\panel{B}{Prelim, 5 electrodes per subject/ROI}\includegraphics[width=0.9\linewidth]{img/variance_components_power.png}
-\caption{(A) Power change at word onset (Cohen's $d$, word on vs.\ off, across subjects). (B) Variance components of the response to each word event, one mixed model per ROI (Aim 1).}
+\panel{B}{Prelim, 5 electrodes per subject/ROI}\includegraphics[width=0.9\linewidth]{img/variance_components_power.png}\par\medskip
+\panel{C}{Prelim, 5 responsive electrodes per subject/ROI}\includegraphics[width=0.5\linewidth]{img/variance_components_latency.png}
+\caption{(A) Power change at word onset (Cohen's $d$, word on vs.\ off, across subjects). (B) Variance components of the response to each word event, one mixed model per ROI (Aim 1); occipital: with anatomical subregion as a component (52 subjects). (C) As B for high-gamma latency (responsive electrodes); frontal, temporal, parietal and occipital: with anatomical subregion (regions with $\ge$30 subjects).}
 \label{fig:power}
 \end{figure}
 
 \begin{figure}[!h]\centering
 \panel{A}{Done}\includegraphics[width=0.6\linewidth]{img/electrode_reliability.png}\par\medskip
 \panel{B}{Done}\includegraphics[width=0.75\linewidth]{img/alpha_hg_across_electrodes.png}\par\medskip
-\panel{C}{Done}\includegraphics[width=0.65\linewidth]{img/alpha_hg_across_events.png}
-\caption{(A) Electrode test-retest: $r$ of electrodes' Cohen's $d$ between session halves (1 dot = 1 subject). (B) Alpha vs.\ high gamma across an ROI's electrodes: $r$ of Cohen's $d$ and of $|d|$ per subject (dots); stars: subjects' mean $r$ vs.\ 0, FDR. (C) Alpha vs.\ high gamma across word events: $r$ per electrode (dots); stars: subjects' mean $r$ vs.\ 0, FDR.}
+\panel{C}{Done}\includegraphics[width=0.6\linewidth]{img/alpha_hg_timescales.png}
+\caption{(A) Electrode test-retest: $r$ of electrodes' Cohen's $d$ between session halves (1 dot = 1 subject). (B) Alpha vs.\ high gamma across an ROI's electrodes: $r$ of Cohen's $d$ and of $|d|$ per subject (dots); stars: subjects' mean $r$ vs.\ 0, FDR. (C) Alpha vs.\ high gamma by timescale: across word events at the same electrode (serial-position and list means removed), across serial-position means and across list means; mean $r$ across subjects $\pm$ SEM per region, stars: FDR.}
 \label{fig:stable}
 \end{figure}
 
 \begin{figure}[!h]\centering
-\panel{A}{Done}\includegraphics[width=0.75\linewidth]{img/fig4b_latency_fine.png}\par\medskip
-\panel{B}{Prelim, 5 responsive electrodes per subject/ROI}\includegraphics[width=0.5\linewidth]{img/variance_components_latency.png}
-\caption{(A) High-gamma half-max latency per region. (B) Variance components of latency per word event (responsive electrodes).}
-\label{fig:latency}
-\end{figure}
-
-\begin{figure}[!h]\centering
-\panel{}{Done}\includegraphics[width=0.8\linewidth]{img/task_effects.png}
-\caption{Serial-position and list effects: deviation from each subject's own mean (all electrodes; latency: responsive electrodes); mean and 95\% CI across subjects.}
-\label{fig:word}
-\end{figure}
-
-\begin{figure}[!h]\centering
-\panel{A}{Done}\includegraphics[width=0.7\linewidth]{img/fig9_anticipation.png}\par\medskip
-\panel{B}{Planned}\planned\par\medskip
-\panel{C}{Planned}\planned
-\caption{(A) High-gamma response peak after long vs.\ short blanks, per region (stars: FDR; n: subjects). (B) Effect of the previous word's response on the current word, by blank length. (C) Variance components of power in the pre-stimulus blank (Aim 1's split).}
+\panel{A}{Done}\includegraphics[width=0.5\linewidth]{img/fig5a_prepost.png}\par\medskip
+\panel{B}{Done}\includegraphics[width=0.65\linewidth]{img/carryover.png}
+\caption{(A) High gamma after long vs.\ short blanks: pre-stimulus average ($-700$ to $-100$ ms) and response peak (responsive electrodes). (B) High-gamma response of each word vs.\ the word one and two back in the same list (same electrode, serial-position means removed), and the change after long vs.\ short waits. Mean across subjects $\pm$ SEM per region; stars: FDR.}
 \label{fig:wait}
 \end{figure}
 
 \begin{figure}[!h]\centering
 \panel{A}{Done}\includegraphics[width=0.9\linewidth]{img/fig6c_epochs_alpha.png}\par\medskip
-\panel{B}{Done}\includegraphics[width=0.5\linewidth]{img/session_test_retest.png}\par\medskip
-\panel{C}{Planned}\planned
-\caption{(A) Alpha ciPLV change at word onset in 200 ms windows: hubs (nodes) and each hub's five strongest connections. (B) Test-retest across sessions: $r$ across regions between halves of a subject's sessions (dots: subjects). (C) Variance components of synchrony.}
+\panel{B}{Planned}\planned
+\caption{(A) Alpha ciPLV change at word onset in 200 ms windows: hubs (nodes) and each hub's five strongest connections. (B) Variance components of synchrony.}
 \label{fig:sync}
 \end{figure}
 

@@ -36,10 +36,13 @@ in the proposal text. Every model or analysis choice and its run cost goes to th
   separable only through subjects with >= 2 electrodes in the ROI. Check: subject-only, electrode-only and both
   (expect electrode-only's electrode share ~ subject + electrode of the full model, same total); one ROI x band on
   the 40-subject pilot first (~10-15 min per fit).
-- Planned (Fig. 5C): the same variance split for power in the pre-stimulus blank alone ((word-off power - mean
+- Planned (Aim 1, no panel; Fig. 5C is now pre-stimulus high gamma long - short, done 2026-11-10): the same variance split for power in the pre-stimulus blank alone ((word-off power - mean
   word-off power) / pooled SD per event; word-off = the existing -700..-100 ms window, as DeHaan ch. 4), control for the word-event component. ~6 h for the 12 power fits; confirm before running.
-- Planned (Fig. 5B): previous-word model (mixed_models.R blank) refit with the variance model's 13 random terms +
-  electrode in list (drift vs carry-over); its current 5 random terms predate DeHaan's. Time on the pilot first.
+- Done 2026-11-09 (Fig. 5B, prelim): previous-word model (mixed_models.R blank): prev_resp x blank_len +
+  prev2_resp + the 13 random terms, 12 fits ~4 h; kept as the check. Figure since 2026-11-10: per-subject lag-1 / lag-2 r,
+  all electrodes (carryover.png); carry-over beyond drift in every ROI and band, no blank-length change.
+- Synchrony test-retest (session_test_retest.png; median r 0.19 / 0.14 vs power 0.67 / 0.81) removed from proposal
+  Fig. 6 on 2026-11-10; decide later where (if anywhere) it goes.
 - Done 2026-11-06: per-event Cohen's d, DeHaan 2026 ch. 3 terms + electrode, electrode in session, word event.
   Single-event d has heavier tails than log power (excess kurtosis alpha 5.1 vs 0.3, high gamma 2.2 vs 0.4): check
   whether the shares depend on the tails (residuals; rank-based or log comparison).
@@ -49,7 +52,22 @@ in the proposal text. Every model or analysis choice and its run cost goes to th
   Over time and frequency the split needs per-event time-frequency power (not cached -> recompute).
 - Word properties (frequency, concreteness) for the item term.
 
+- Region within lobe (pilot 2026-11-10, occipital, 52 subjects; proposal Fig. 1B occipital row): full run adds
+  `(1 | region)` to all variance fits, only regions with >= MIN_SUBJECTS_ROI (30) subjects, as Fig. 3A (latency:
+  subjects with responsive electrodes; one calcarine electrode at 460 ms inflated the first latency pilot). Decide
+  the same rule for power (all electrodes) and whether electrodes outside those regions are dropped or pooled. Only 4-5 occipital regions (fusiform most electrodes;
+  medial / striate under-sampled). In high gamma region also takes from subject (subregion coverage differs between
+  subjects). Pilot subject share (11%) differs from the full run's (8%): update the Aim 1 numbers after the full run.
+- Band coupling by timescale (Fig. 2C): word-event r is per electrode, serial-position / list r from lobe-averaged
+  means (all electrodes) -> averaging favours slow coupling; matched check: per-electrode slow r (trials.csv). Slow r from 11 noisy
+  position means is attenuated by noise: split-half reliability of the curves to correct. MTL positive coupling at
+  every timescale: broadband / aperiodic shift? (see Analyses: alpha vs high gamma).
+- Carry-over (Fig. 5B): mixed model with Aim 1's terms agrees with the correlations (prev x blank |b| <= 0.003) --
+  methods / supplement, not the proposal text.
+
 **Data quality**
+- Fig. 5A response peak: parietal mean +0.07 with a large SEM from R1323T (4.4; the known artifact subject below);
+  not significant. Recheck after artifact rejection.
 - **Artifact rejection per word event in the main pipeline** (one R1323T word event makes the supramarginal spike
   in Fig. 2A; affects every analysis) -> rerun all analyses and simulations. Preliminaries already drop robust
   outliers (window mean and whole-clip peak, 10 MAD).
@@ -60,7 +78,10 @@ in the proposal text. Every model or analysis choice and its run cost goes to th
   broadband / aperiodic shift does not drive r ~ 0 across word events; extends Marks 2021.
 - Response types (alpha x high gamma, up / none / down): anatomy (MNI), latency per type, stability between
   session halves; within-region anatomical order as Pinheiro-Chagas 2024 (arithmetic vs baseline; math vs non-math).
-- Latency per word event (half-max; SD ~180 ms): replace with a template / cross-correlation estimate; does an
+- Latency per word event (half-max; SD ~180 ms): replace with a template / cross-correlation estimate (Woody 1967:
+  slide the electrode's session-average curve over each event, best lag; choices: lag range +/-200 ms, Woody
+  iterations or not, events with weak best r (< 0.2?) -> NaN). ~15 min (one pass over the cached envelopes in
+  plot_variance_structure.py) + ~1 h latency variance refit + region pilot redo; Fig. 3A unchanged; does an
   electrode's latency replicate between session halves, as the amplitude pattern does (r up to 0.90)?
 - What the shared word-event component is (arousal, attention, common reference).
 - Blank interval (plot_variance_structure.py sections 4-5): dropped from the proposal 2026-11-06. The blank model now
@@ -125,4 +146,6 @@ in the proposal text. Every model or analysis choice and its run cost goes to th
 
 ## Cleanup
 - `match_events.py`: encoding/retrieval matching code now unused.
+- `build_roi_power.py --band spectrum` plot stage: stale (bin count no longer matches FREQ_EDGES; crashes);
+  the paper's spectrum comes from `plot_spectrum.py`. Its ROI box plots duplicate `plot_boxplots.py` with another y label.
 - ~30 GB raw EEG from the null simulations under `bids_data/` (delete by hand).

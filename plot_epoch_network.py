@@ -40,7 +40,7 @@ def epoch_table(save_root: str, band: str, metric: str, lobe_of: dict, n_session
         if E is None:
             continue
         xyz, _ = fc.pair_xyz_lead(fc.dfrow_from_sid(mat["sid"]))
-        roi = fc.roi_of_reg_full(mat["reg_full"], lobe_of)
+        roi = fc.roi_of_reg_full(mat["reg_full"], lobe_of, pool=False)
         lobe = [r and r.split("-", 1)[1] for r in roi]
         if fine:
             roi = [g if r is not None else None for g, r in zip(mat["reg_full"], roi)]

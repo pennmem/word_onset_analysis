@@ -308,10 +308,15 @@ File: img/figS1_power_subjects.png Graphic file (type bmp)
 <img/figS1_power_subjects.png>
 File: img/variance_components_power.png Graphic file (type bmp)
 <img/variance_components_power.png>
+File: img/variance_components_latency.png Graphic file (type bmp)
+<img/variance_components_latency.png>
 LaTeX Font Info:    External font `cmex10' loaded for size
-(Font)              <7> on input line 83.
+(Font)              <7> on input line 91.
 LaTeX Font Info:    External font `cmex10' loaded for size
-(Font)              <5> on input line 83.
+(Font)              <5> on input line 91.
+
+
+LaTeX Warning: Float too large for page by 67.06123pt on input line 93.
 
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
@@ -320,39 +325,27 @@ File: img/electrode_reliability.png Graphic file (type bmp)
 <img/electrode_reliability.png>
 File: img/alpha_hg_across_electrodes.png Graphic file (type bmp)
 <img/alpha_hg_across_electrodes.png>
-File: img/alpha_hg_across_events.png Graphic file (type bmp)
-<img/alpha_hg_across_events.png>
+File: img/alpha_hg_timescales.png Graphic file (type bmp)
+<img/alpha_hg_timescales.png>
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
-File: img/fig4b_latency_fine.png Graphic file (type bmp)
-<img/fig4b_latency_fine.png>
-File: img/variance_components_latency.png Graphic file (type bmp)
-<img/variance_components_latency.png>
-
-LaTeX Warning: `!h' float specifier changed to `!ht'.
-
-File: img/task_effects.png Graphic file (type bmp)
-<img/task_effects.png>
-
-LaTeX Warning: `!h' float specifier changed to `!ht'.
-
-File: img/fig9_anticipation.png Graphic file (type bmp)
-<img/fig9_anticipation.png>
+File: img/fig5a_prepost.png Graphic file (type bmp)
+<img/fig5a_prepost.png>
+File: img/carryover.png Graphic file (type bmp)
+<img/carryover.png>
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
 File: img/fig6c_epochs_alpha.png Graphic file (type bmp)
 <img/fig6c_epochs_alpha.png>
-File: img/session_test_retest.png Graphic file (type bmp)
-<img/session_test_retest.png>
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
-[2] [3] [4] [5] [6] [7] [8] (proposal.bbl) [9
+[2] [3] [4] [5] [6] (proposal.bbl) [7
 
 ] (proposal.aux)
 Package rerunfilecheck Info: File `proposal.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
  )
-Output written on proposal.xdv (9 pages, 84224 bytes).
+Output written on proposal.xdv (7 pages, 89928 bytes).

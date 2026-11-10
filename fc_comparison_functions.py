@@ -456,10 +456,11 @@ def contrast(beh: str) -> dict[str, str]:
 
 
 # --- Burke ROI vocabulary ----------------------------------------------------
-# 12 Burke ROIs, fixed plotting order (left block then right block).
+# 12 Burke ROIs, fixed plotting order (left block then right block), then the 6 with hemispheres
+# pooled ('B-<lobe>', the default of roi_of_reg_full; synchrony keeps L / R).
 LOBES: list[str] = ["frontal", "temporal", "parietal", "occipital", "limbic",
                     "hippocampus"]
-ROI_ORDER: list[str] = [f"{h}-{lobe}" for h in ("L", "R") for lobe in LOBES]
+ROI_ORDER: list[str] = [f"{h}-{lobe}" for h in ("L", "R", "B") for lobe in LOBES]
 
 # Okabe-Ito, one hue per Burke lobe (CVD-safe). Hemisphere is NOT color-coded:
 # it is carried by x position (Left block / Right block), so identity never
@@ -472,6 +473,11 @@ LOBE_COLORS: dict[str, str] = {
     "limbic": "#56B4E9",
     "hippocampus": "#D55E00",
 }
+
+
+def present_rois(tbl: pd.DataFrame) -> list[str]:
+    """The ROIs in tbl["roi"], in ROI_ORDER."""
+    return [r for r in ROI_ORDER if r in set(tbl["roi"])]
 
 
 def roi_color(roi: str) -> Any:
@@ -495,9 +501,9 @@ def load_burke_maps() -> dict[str, str]:
     return lobe.set_index("region")["burke_lobe"].to_dict()
 
 
-def roi_of_reg_full(reg_full: Any, lobe_of: dict[str, str]) -> NDArrayAny:
+def roi_of_reg_full(reg_full: Any, lobe_of: dict[str, str], pool: bool = True) -> NDArrayAny:
     """Map each 'L amygdala' / 'R hippocampus' / nan label to a Burke ROI
-    (e.g. 'R-temporal'), or None when the region has no Burke lobe.
+    (e.g. 'B-temporal'; 'R-temporal' with pool=False), or None when the region has no Burke lobe.
 
     Region LABELS come from the repo's canonical type-aware cascade
     (helper.regionalize_electrodes_by_type): depths from VOLUMETRIC atlases,
@@ -514,7 +520,7 @@ def roi_of_reg_full(reg_full: Any, lobe_of: dict[str, str]) -> NDArrayAny:
         if LONGETAL and (lobe in LONGETAL.get("exclude_lobes", ())            # Long et al.: no limbic/sublobar
                          or region in LONGETAL.get("exclude_regions", ())):
             lobe = ""
-        out.append(f"{hemi}-{lobe}"
+        out.append(f"{'B' if pool else hemi}-{lobe}"
                    if (lobe in LOBES and hemi in ("L", "R")) else None)
     return np.array(out, dtype=object)
 
@@ -557,7 +563,7 @@ def mean_ci(v: Any, conf: float = 0.95) -> tuple[float, float]:
 
 
 def roi_stats(
-    tbl: pd.DataFrame, measure: str, roi_order: Sequence[str] = tuple(ROI_ORDER),
+    tbl: pd.DataFrame, measure: str, roi_order: Sequence[str] | None = None,
     min_subjects: int | None = None,
 ) -> pd.DataFrame:
     """Per-ROI n / mean / CI / median / IQR + one-sample t vs 0, BH-FDR over ROIs.
@@ -577,7 +583,7 @@ def roi_stats(
     rows: list[dict[str, Any]] = []
     tested: list[str] = []
     pv: list[float] = []
-    for roi in roi_order:
+    for roi in roi_order or present_rois(tbl):
         v = tbl.loc[tbl["roi"] == roi, measure].dropna().to_numpy(float)
         t = p = np.nan
         # t is undefined at zero variance (every subject identical) -- rare, but
@@ -619,9 +625,11 @@ def print_roi_stats(st: pd.DataFrame, title: str) -> None:
 
 # --- ROI figures -------------------------------------------------------------
 def _roi_positions(roi_order: Sequence[str], lobes: Sequence[str]) -> list[float]:
-    """x positions: each region's left and right ROI side by side, regions spaced apart."""
-    side = {"L": 0.0, "R": 1.0}
-    return [2.6 * list(lobes).index(r.split("-", 1)[1]) + side[r[0]] for r in roi_order]
+    """x positions: each region's left and right ROI side by side, regions spaced apart
+    (hemispheres pooled: one per region)."""
+    side = {"L": 0.0, "R": 1.0, "B": 0.0}
+    step = 1.3 if all(r[0] == "B" for r in roi_order) else 2.6
+    return [step * list(lobes).index(r.split("-", 1)[1]) + side[r[0]] for r in roi_order]
 
 
 def _roi_axis_furniture(
@@ -632,7 +640,7 @@ def _roi_axis_furniture(
     ax.axhline(0, color="0.7", lw=0.9, zorder=0)
     ax.set_xlim(min(pos) - 0.7, max(pos) + 0.7)
     ax.set_xticks(list(pos))
-    ax.set_xticklabels([r[0] for r in roi_order], fontsize=11, color="0.35")
+    ax.set_xticklabels([r[0] if r[0] != "B" else "" for r in roi_order], fontsize=11, color="0.35")
     for lobe in lobes:
         xs = [x for x, r in zip(pos, roi_order) if r.split("-", 1)[1] == lobe]
         if xs:
@@ -668,14 +676,18 @@ def box_dots(ax: Any, data: Sequence[Any], positions: Sequence[float], colors: S
 
 def roi_panel(
     ax: Any, tbl: pd.DataFrame, measure: str, rng: Any,
-    roi_order: Sequence[str] = tuple(ROI_ORDER),
+    roi_order: Sequence[str] | None = None,
     lobes: Sequence[str] = tuple(LOBES),
     stats: pd.DataFrame | None = None,
+    ylim: tuple | None = None,
 ) -> list[float]:
     """One 12-ROI panel over the per-subject values in `tbl[measure]`:
-    median/IQR box + 1.5*IQR whiskers + mean diamond + subject points."""
+    median/IQR box + 1.5*IQR whiskers + mean diamond + subject points.
+    `ylim` (bottom, top; None keeps auto) crops the axis where the data go past it (never
+    extends it); stars stay at its edge."""
     data: list[NDArrayAny] = []
     colors: list[str] = []
+    roi_order = roi_order or present_rois(tbl)
     pos = _roi_positions(roi_order, lobes)
     for roi in roi_order:
         data.append(tbl.loc[tbl["roi"] == roi, measure].dropna().to_numpy(float))
@@ -713,20 +725,25 @@ def roi_panel(
                    facecolor="white", edgecolor="0.15", linewidths=1.2, zorder=4)
 
     _roi_axis_furniture(ax, pos, roi_order, lobes)
+    lo, top = ax.get_ylim()
+    if ylim:
+        lo, top = max(lo, ylim[0] if ylim[0] is not None else lo), min(top, ylim[1] if ylim[1] is not None else top)
+        ax.set_ylim(lo, top)
     _annotate_counts_and_stars(
         ax, pos, roi_order,
         n=[v.size for v in data],
-        tops=[float(np.max(v)) if v.size else np.nan for v in data],
+        tops=[min(float(np.max(v)), top) if v.size else np.nan for v in data],
         stats=stats)
     return pos
 
 
 def roi_bar_panel(
-    ax: Any, stats: pd.DataFrame, roi_order: Sequence[str] = tuple(ROI_ORDER),
+    ax: Any, stats: pd.DataFrame, roi_order: Sequence[str] | None = None,
     lobes: Sequence[str] = tuple(LOBES),
 ) -> list[float]:
     """One 12-ROI panel of bars, across-subject mean +/- SEM (roi_stats), coloured by
     lobe; FDR stars in a fixed row along the top, n along the bottom."""
+    roi_order = roi_order or present_rois(stats)
     pos = _roi_positions(roi_order, lobes)
     s = stats.set_index("roi")
     for i, roi in enumerate(roi_order):
@@ -745,6 +762,24 @@ def roi_bar_panel(
     ax.set_ylim(min(lo, 0) - 1.4 * pad, max(hi, 0) + 1.6 * pad)   # room for n and stars
     _roi_axis_furniture(ax, pos, roi_order, lobes)
     return pos
+
+
+def roi_dot_panel(ax: Any, stats: dict[str, pd.DataFrame], ylabel: str, lobes: Sequence[str] = tuple(LOBES)) -> None:
+    """Several measures on one axis: one x category per measure ({label: roi_stats table}), in each a
+    cluster of lobe dots, across-subject mean +/- SEM, FDR stars above."""
+    for k, (lab, st) in enumerate(stats.items()):
+        s = st.set_index("roi")
+        for jj, lb in enumerate(lobes):
+            if f"B-{lb}" not in s.index:
+                continue
+            r = s.loc[f"B-{lb}"]; x = k + (jj - (len(lobes) - 1) / 2) * 0.11
+            ax.errorbar(x, r["mean"], yerr=r["sem"], fmt="o", ms=5, color=LOBE_COLORS[lb], lw=1.2,
+                        label=lb.capitalize() if k == 0 else None)
+            ax.annotate(stars(float(r["q"])), (x, r["mean"] + r["sem"]), textcoords="offset points", xytext=(0, 2),
+                        ha="center", va="bottom", fontsize=7)
+    ax.axhline(0, color="0.5", lw=0.8); ax.set_xticks(range(len(stats)), list(stats))
+    ax.set_ylabel(ylabel); ax.spines[["top", "right"]].set_visible(False)
+    ax.legend(frameon=False, fontsize=8, loc="best")
 
 
 def _annotate_counts_and_stars(
@@ -836,7 +871,8 @@ def band_contrast_figure(out_dir: str, stem: str, col: str, ylabel: str, bars: b
         st = roi_stats(tbl, col)
         panels.append((f"{band_label(band)}\n{ylabel.format(metric=METRIC_LABELS.get(metric, metric))}",
                        (lambda ax, st=st: roi_bar_panel(ax, st)) if bars else
-                       (lambda ax, tbl=tbl, st=st: roi_panel(ax, tbl, col, np.random.default_rng(0), stats=st))))
+                       (lambda ax, tbl=tbl, st=st: roi_panel(ax, tbl, col, np.random.default_rng(0), stats=st,
+                                                             ylim=(None, 1.0)))))
     if panels:   # none when no band's run metric has been plotted yet
         roi_figure(panels, out_dir, stem.replace("_{band}", "").replace("_{metric}", "") + ("_sem" if bars else ""),
                    **(dict(width=6.5, height=2.8) if bars else {}))   # bars: compact, for half-width paper panels
@@ -935,7 +971,7 @@ def pretty_roi(name: Any) -> str:
     t = str(name)
     if "-" in t and len(t.split("-", 1)[0]) == 1:
         hemi, rest = t.split("-", 1)
-        return f"{hemi.upper()}-{rest[:1].upper()}{rest[1:]}"
+        return f"{'' if hemi == 'B' else hemi.upper() + '-'}{rest[:1].upper()}{rest[1:]}"
     return t[:1].upper() + t[1:]
 
 

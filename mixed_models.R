@@ -36,6 +36,12 @@ load <- function(p) {
   d[, region := sub("^[LR] ", "", fine)]
   d[!is.na(region) & !(region %in% c("", "nan", "None"))]
 }
+# variance and blank modes: the 13 random intercepts (DeHaan 2026 ch. 3's 10 + electrode, electrode in session, event)
+add_terms <- function(tr) tr[, `:=`(elsess = paste(electrode, session), sess_list = paste(session, list),
+                                    event = paste(session, event), subj_item = paste(subject, item),
+                                    subj_sp = paste(subject, sp), list_sp = paste(list, sp), sess_sp = paste(session, sp))]
+rand <- "(1 | item) + (1 | sp) + (1 | list) + (1 | subject) + (1 | subj_item) + (1 | session) + (1 | subj_sp) +
+  (1 | list_sp) + (1 | sess_list) + (1 | sess_sp) + (1 | electrode) + (1 | elsess) + (1 | event)"
 
 if (mode == "latency") {
   out <- sub("_electrodes\\.csv$", "_mixed", path)
@@ -70,12 +76,8 @@ if (mode == "latency") {
   # the Python side chose (at most N per subject and lobe). Optional 3rd argument: parallel fits.
   suppressMessages(library(parallel))
   cores <- if (length(args) >= 3) as.integer(args[3]) else 6
-  tr <- fread(file.path(path, "trials.csv"))
-  tr[, `:=`(elsess = paste(electrode, session), sess_list = paste(session, list), event = paste(session, event),
-            subj_item = paste(subject, item), subj_sp = paste(subject, sp), list_sp = paste(list, sp),
-            sess_sp = paste(session, sp))]
-  f <- ~ (1 | item) + (1 | sp) + (1 | list) + (1 | subject) + (1 | subj_item) + (1 | session) + (1 | subj_sp) +
-    (1 | list_sp) + (1 | sess_list) + (1 | sess_sp) + (1 | electrode) + (1 | elsess) + (1 | event)
+  tr <- add_terms(fread(file.path(path, "trials.csv")))
+  f <- as.formula(paste("~", rand))
   jobs <- CJ(lobe = unique(tr$lobe), band = c("alpha", "high_gamma", "latency"))
   fits <- mclapply(seq_len(nrow(jobs)), function(i) {
     lb <- jobs$lobe[i]; b <- jobs$band[i]
@@ -92,41 +94,36 @@ if (mode == "latency") {
   }, mc.cores = min(nrow(jobs), cores))
   fwrite(rbindlist(Filter(is.data.frame, fits)), file.path(path, "components.csv"))
 } else if (mode == "blank") {
-  # per lobe and band: y ~ 0 + design + bin_c + prev_z + prev_z:blank_z + next_z + (1|subject) + (1|electrode)
-  #   + (1|elsess) + (1|sp) + (1|sess_list)
-  # bin_c: blank before the word, 50 ms bins, each vs its design's first bin; prev_z: the previous word's
-  # response at the same electrode (same list, the immediately preceding word), z within electrode-session;
-  # blank_z: blank before the word, z within session; next_z: the blank after the word (z within session;
-  # a list's last word: 0), unknown when the word appears -> a control.
+  # per lobe and band: y ~ prev_resp + prev2_resp + blank_len + prev_resp:blank_len + the variance model's 13 terms
+  # prev_resp / prev2_resp: the response to the word 1 / 2 back at the same electrode (same list), z within
+  # electrode-session (drift: both predict the word; carry-over: mostly the word 1 back); blank_len: blank before
+  # the word, z within session. No electrode-in-list term: with ~11 words a list, a per-list offset biases a lagged
+  # slope down by ~1/11 (Nickell 1981).
   suppressMessages(library(parallel))
   cores <- if (length(args) >= 3) as.integer(args[3]) else 6
-  tr <- fread(file.path(path, "trials.csv"))
-  tr[, `:=`(elsess = paste(electrode, session), sess_list = paste(session, list))]
-  ev <- unique(tr[, .(session, list, event, blank_ms)])
-  setorder(ev, session, event)
-  ev[, next_blank := fifelse(shift(event, -1) == event + 1, shift(blank_ms, -1), NA_real_), by = .(session, list)]
-  ev[, next_z := { v <- (next_blank - mean(next_blank, na.rm = TRUE)) / sd(next_blank, na.rm = TRUE); fifelse(is.na(v), 0, v) },
-     by = session]
-  tr <- merge(tr, ev[, .(session, event, next_z)], by = c("session", "event"))
+  tr <- fread(file.path(path, "trials.csv"))[in_power == TRUE]
   setorder(tr, electrode, session, event)
+  z <- function(v) (v - mean(v, na.rm = TRUE)) / sd(v, na.rm = TRUE)
+  for (b in c("alpha", "high_gamma")) for (k in 1:2)
+    tr[, paste0(b, "_prev", k) := z(fifelse(shift(event, k) == event - k & shift(list, k) == list, shift(get(b), k), NA_real_)),
+       by = .(electrode, session)]
   lo <- c("750-1000" = 750, "800-1200" = 800); hi <- c("750-1000" = 1000, "800-1200" = 1200)
-  tr <- tr[in_power & is.finite(blank_ms) & blank_ms >= lo[design] - 40 & blank_ms <= hi[design] + 40]   # screen-timing slop
-  tr[, bin := lo[design] + 50 * pmin(floor((pmax(blank_ms, lo[design]) - lo[design]) / 50), (hi[design] - lo[design]) / 50 - 1)]
-  tr[, bin_c := relevel(factor(fifelse(bin == lo[design], "ref", paste0(design, "_", bin))), "ref")]   # vs the design's first bin
-  tr[, blank_z := (blank_ms - mean(blank_ms)) / sd(blank_ms), by = session]
+  tr <- tr[is.finite(blank_ms) & blank_ms >= lo[design] - 40 & blank_ms <= hi[design] + 40]   # screen-timing slop
+  tr[, blank_len := z(blank_ms), by = session]
+  add_terms(tr)
   jobs <- CJ(lobe = unique(tr$lobe), band = c("alpha", "high_gamma"))
   fits <- mclapply(seq_len(nrow(jobs)), function(i) {
     lb <- jobs$lobe[i]; b <- jobs$band[i]
     d <- tr[lobe == lb & is.finite(get(b))]
-    d[, prev := fifelse(shift(event) == event - 1 & shift(list) == list, shift(get(b)), NA_real_), by = elsess]
-    d[, prev_z := (prev - mean(prev, na.rm = TRUE)) / sd(prev, na.rm = TRUE), by = elsess]
-    d <- d[is.finite(prev_z)]
+    d[, `:=`(prev_resp = get(paste0(b, "_prev1")), prev2_resp = get(paste0(b, "_prev2")))]
+    d <- d[is.finite(prev_resp) & is.finite(prev2_resp)]
     if (uniqueN(d$subject) < 5) return(NULL)
-    m <- tryCatch(lmer(as.formula(paste(b, "~ 0 + design + bin_c + prev_z + prev_z:blank_z + next_z + (1 | subject) + (1 | electrode) +",
-                                        "(1 | elsess) + (1 | sp) + (1 | sess_list)")), data = d,
+    t0 <- Sys.time()
+    m <- tryCatch(lmer(as.formula(paste(b, "~ prev_resp + prev2_resp + blank_len + prev_resp:blank_len +", rand)), data = d,
                        control = lmerControl(optimizer = "bobyqa", calc.derivs = FALSE)),
                   error = function(e) { message(lb, " ", b, ": ", conditionMessage(e)); NULL })
     if (is.null(m)) return(NULL)
+    message(lb, " ", b, ": ", nrow(d), " rows, ", round(difftime(Sys.time(), t0, units = "mins"), 1), " min")
     data.table(term = names(fixef(m)), est = fixef(m), se = sqrt(diag(as.matrix(vcov(m)))), lobe = lb, band = b,
                n = nrow(d), nsub = uniqueN(d$subject), nel = uniqueN(d$electrode))
   }, mc.cores = min(nrow(jobs), cores))

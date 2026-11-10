@@ -120,7 +120,7 @@ def main() -> None:
     args, save_root = fc.plot_args(__doc__, join("figures", "burke_roi_power"))
     d = spectrum_table(save_root, fc.load_burke_maps(), args.n_sessions)
     os.makedirs(args.out_dir, exist_ok=True)
-    rows = [f"{h}-{lobe}" for lobe in fc.LOBES for h in "LR"]   # left / right of each region together
+    rows = [f"B-{lobe}" for lobe in fc.LOBES]   # hemispheres pooled
     stem = join(args.out_dir, f"power_spectrum_{BEH}_rois")
     M, q = run(subject_table(d, "roi", args.min_electrodes), rows, stem)
     heatmap(M, q, [fc.pretty_roi(x) for x in rows], stem, (7.5, 5.2), [r.split("-", 1)[1] for r in rows])

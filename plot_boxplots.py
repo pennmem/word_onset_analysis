@@ -51,7 +51,7 @@ def sync_table(save_root: str, band: str, metric: str, lobe_of: dict, n_sessions
         pairs = helper.get_pairs(fc.dfrow_from_sid(mat["sid"]))
         if pairs is None or mat.get(metric) is None:
             continue
-        roi = fc.roi_of_reg_full(mat["reg_full"], lobe_of)
+        roi = fc.roi_of_reg_full(mat["reg_full"], lobe_of, pool=False)
         rows += [(str(mat["sid"][0]), lab, r, float(v))
                  for lab, r, v in zip(pairs["label"].astype(str), roi, fc.electrode_sync(np.asarray(mat[metric], float)))
                  if r is not None and np.isfinite(v)]

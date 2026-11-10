@@ -22,10 +22,12 @@ Scored lists, serial positions 2-12 (position 1 follows the countdown and is not
      envelope vs the electrode's word-off mean (responsive electrodes) and alpha log power vs its session
      mean (window centre); per subject and lobe, mean and 95% CI across subjects.
   5. Blank interval and the neighbouring words (mixed_models.R blank): per lobe and band, the response
-     ~ blank length (50 ms bins, per design: 750-1000 vs 800-1200 ms) + the previous word's response
-     (z, same electrode and list) x blank length + the blank after the word (control: unknown when the
-     word appears) + (1|subject) + (1|electrode) + (1|electrode x session) + (1|serial position) +
-     (1|session x list). Estimates with 95% Wald CIs; coefficients BH-FDR over lobes x bands x terms.
+     ~ the previous word's response x blank length + the response two words back (z, same electrode and
+     list; drift vs carry-over) + section 1's random intercepts. Estimates with 95% Wald CIs; coefficients
+     BH-FDR over lobes x bands x terms (a check). Figure: carry-over by correlation, all electrodes: per
+     electrode-session, serial-position means out, r between each word's response and the one 1 / 2 words
+     back in the same list; r with the previous word after long - short blanks (session median, as
+     plot_anticipation). Sessions -> electrode -> subject x lobe; t vs 0, BH-FDR over lobes (fc.roi_stats).
 -> figures/variance_structure/*.png (tables and model fits: results/variance_structure/)
 
     python plot_variance_structure.py [--n-subjects N] [--from-csv] [--refit] [--cores C] [--max-electrodes M]
@@ -57,7 +59,7 @@ OFFSET_BIN_MS = 20
 OFFSET_MAX_MS = 1300
 BANDS = {"alpha": "Alpha power", "high_gamma": "High-gamma power", "latency": "High-gamma latency\n(responsive electrodes)"}
 GROUPS = {   # stacked share segments: label -> (model terms, colour)
-    "Subject": (["subject"], "#1f4fa3"), "Electrode": (["electrode"], "#d62728"),
+    "Subject": (["subject"], "#1f4fa3"), "Region (within lobe)": (["region"], "#17becf"), "Electrode": (["electrode"], "#d62728"),
     "Electrode in session": (["elsess"], "#f2c12e"),
     "Session": (["session"], "#8c564b"), "List in session": (["sess_list"], "#ff7f0e"),
     "Task (serial position, list, word)": (["sp", "list", "item", "subj_item", "subj_sp", "list_sp", "sess_sp"], "#2ca02c"),
@@ -73,6 +75,16 @@ def robust_ok(v: np.ndarray) -> np.ndarray:
 def pooled_sd(hi: np.ndarray, lo: np.ndarray) -> np.ndarray:
     """(electrodes,) the pooled SD of helper.cohens_d."""
     return np.sqrt(((len(hi) - 1) * hi.var(0, ddof=1) + (len(lo) - 1) * lo.var(0, ddof=1)) / (len(hi) + len(lo) - 2))
+
+
+def lag_r(v: np.ndarray, sp: np.ndarray, lst: np.ndarray, lag: int, cur: np.ndarray | None = None) -> float:
+    """r between each event's value and the value `lag` words earlier in the same list (current events
+    restricted to `cur`); NaN below 10 pairs."""
+    a, b = v[lag:], v[:-lag]
+    ok = (lst[lag:] == lst[:-lag]) & (sp[lag:] == sp[:-lag] + lag) & np.isfinite(a) & np.isfinite(b)
+    if cur is not None:
+        ok &= cur[lag:]
+    return np.corrcoef(a[ok], b[ok])[0, 1] if ok.sum() >= 10 else np.nan
 
 
 def task_columns(w: pd.DataFrame, blank: np.ndarray) -> pd.DataFrame:
@@ -128,6 +140,8 @@ def main() -> None:
             tc = task_columns(w, blank)
             use = (tc["list"].to_numpy() >= 1) & tc["sp"].between(*SP_RANGE).to_numpy()
             resp = responsive(g)
+            sp_, lst_ = tc["sp"].to_numpy(), tc["list"].to_numpy()
+            long_ = blank > np.nanmedian(blank); short_ = blank < np.nanmedian(blank)   # split as plot_anticipation
             design = "800-1200" if str(g["sid"][1]) == "pyFR" else "750-1000"
             lo_env = np.asarray(g["env_lo"], float)                # word-off window, (events, electrodes, time)
             if lo_env.shape[:2] == x.shape[:2]:   # 4. time since the previous word's offset
@@ -161,7 +175,16 @@ def main() -> None:
                 trial_rows.append(tc[e].assign(subject=sub, electrode=el, session=sess, lobe=lobe[c],
                                                event=np.flatnonzero(e), alpha=ya[e, c], high_gamma=yg[e, c],
                                                latency=lat, blank_ms=blank[e], design=design))
-                lv_rows.append({"subject": sub, "electrode": el, "session": sess, "lobe": lobe[c],
+                lags, res = {}, {}   # 5. carry-over: serial-position means out, then r with the word 1 / 2 back
+                for k, v in (("alpha", ya[:, c]), ("high_gamma", yg[:, c])):
+                    v = np.where(e, v, np.nan)
+                    v = v - pd.Series(v).groupby(sp_).transform("mean").to_numpy()
+                    lags.update({f"r1_{k}": lag_r(v, sp_, lst_, 1), f"r2_{k}": lag_r(v, sp_, lst_, 2),
+                                 f"r1long_{k}": lag_r(v, sp_, lst_, 1, long_), f"r1short_{k}": lag_r(v, sp_, lst_, 1, short_)})
+                    res[k] = v - pd.Series(v).groupby(lst_).transform("mean").to_numpy()   # 3. list means out too
+                ok_ = np.isfinite(res["alpha"]) & np.isfinite(res["high_gamma"])
+                lags["r_fast"] = np.corrcoef(res["alpha"][ok_], res["high_gamma"][ok_])[0, 1]
+                lv_rows.append({**lags, "subject": sub, "electrode": el, "session": sess, "lobe": lobe[c],
                                 "d_alpha": a["cohens_d"][c], "d_hg": g["cohens_d"][c],
                                 "r_trial": np.corrcoef(ya[e, c], yg[e, c])[0, 1], "n": e.sum(),
                                 "pa_sum": pa[e, c].sum(), "pa_sq": (pa[e, c] ** 2).sum(),
@@ -255,10 +278,28 @@ def main() -> None:
                         if len(z := np.arctanh(dd[dd["lobe"] == lb].groupby("subject")["r"].mean().clip(-0.999, 0.999))) >= 5])
     cst["q"] = multipletests(cst["p"], method="fdr_bh")[1]
     cst.to_csv(join(tdir, "alpha_hg_coupling_stats.csv"), index=False)
+    # alpha vs high gamma by timescale: word event (same electrode, serial-position and list means out), serial-position
+    # and list means (subject x lobe, all electrodes; levels with >= 5 events, >= 5 levels); t vs 0 per lobe (fc.roi_stats)
+    def level_r(term: str) -> pd.DataFrame:
+        rows = []
+        for (s_, lb, b_, t_), (sm, n) in lev.items():
+            if b_ == "alpha" and t_ == term and (s_, lb, "high_gamma", term) in lev:
+                sg, ng = lev[(s_, lb, "high_gamma", term)]
+                ok = (n >= 5) & (ng >= 5)
+                if ok.sum() >= 5:
+                    rows.append({"sub": s_, "roi": f"B-{lb}", "r": np.corrcoef(sm[ok] / n[ok], sg[ok] / ng[ok])[0, 1]})
+        return pd.DataFrame(rows)
+    fast = (E.groupby(["subject", "lobe", "electrode"])["r_fast"].mean().groupby(["subject", "lobe"]).mean().reset_index()
+            .rename(columns={"subject": "sub", "r_fast": "r"}).assign(roi=lambda d: "B-" + d["lobe"]))
+    ts = {"Word event": fast, "Serial position": level_r("sp"), "List": level_r("list")}
+    ts = {k: fc.roi_stats(d, "r").assign(timescale=k) for k, d in ts.items()}
+    pd.concat(ts.values()).to_csv(join(tdir, "alpha_hg_timescales_stats.csv"), index=False)
+    fig, ax = plt.subplots(figsize=(6.5, 3.6), layout="constrained")
+    fc.roi_dot_panel(ax, ts, "r (alpha vs high gamma)")
+    ax.set_ylim(-0.3, 0.3); fig.savefig(join(args.out_dir, "alpha_hg_timescales.png"), dpi=200); plt.close(fig)
     x0 = np.arange(len(fc.LOBES))
-    for name, panels, size in (("alpha_hg_across_events", (("across events", "Across word events (per electrode)", "C2"),), (6.5, 3.4)),
-                               ("alpha_hg_across_electrodes", (("across electrodes", "Signed Cohen's d", "C1"),
-                                                               ("across electrodes, magnitude", "|Cohen's d|", "C4")), (8, 3.8))):
+    for name, panels, size in (("alpha_hg_across_electrodes", (("across electrodes", "Signed Cohen's d", "C1"),
+                                                               ("across electrodes, magnitude", "|Cohen's d|", "C4")), (8, 3.8)),):
         fig, ax = plt.subplots(figsize=size)
         off_ = (np.arange(len(panels)) - (len(panels) - 1) / 2) * 0.4
         for dx, (kk, lab, col) in zip(off_, panels):
@@ -310,26 +351,27 @@ def main() -> None:
 
     # 5. blank interval and the neighbouring words
     BF = pd.read_csv(join(tdir, "blank_fixed.csv"))
-    co = BF[BF["term"].isin(["prev_z", "next_z", "prev_z:blank_z"])].copy()
+    terms = {"prev_resp": "Previous word's response", "prev2_resp": "Response two words back",
+             "prev_resp:blank_len": "Previous word x blank length"}
+    co = BF[BF["term"].isin(terms)].copy()
     co["p"] = 2 * norm.sf(np.abs(co["est"] / co["se"]))
     co["q"] = multipletests(co["p"], method="fdr_bh")[1]
-    co.to_csv(join(tdir, "blank_coefficients.csv"), index=False)
-    terms = {"prev_z": "Previous word's response", "prev_z:blank_z": "Previous word x blank length",
-             "next_z": "Blank after the word\n(control)"}
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True, layout="constrained")
-    for ax, (b, lab) in zip(axes, (("alpha", "Alpha"), ("high_gamma", "High gamma"))):
-        for k, tm in enumerate(terms):
-            for jj, lb in enumerate(lobes):
-                r_ = co[(co["band"] == b) & (co["lobe"] == lb) & (co["term"] == tm)]
-                if len(r_):
-                    r_ = r_.iloc[0]; y = k + (jj - (len(lobes) - 1) / 2) * 0.12
-                    ax.errorbar(r_["est"], y, xerr=1.96 * r_["se"], fmt="o", ms=4, color=fc.LOBE_COLORS[lb],
-                                mfc=fc.LOBE_COLORS[lb] if r_["q"] < 0.05 else "w", lw=1, label=lb.capitalize() if k == 0 else None)
-        ax.axvline(0, color="0.5", lw=0.8); ax.set_yticks(range(len(terms)), list(terms.values())); ax.set_title(lab)
-        ax.set_xlabel("Coefficient (Cohen's d units per SD; filled: FDR q < .05)"); ax.spines[["top", "right"]].set_visible(False)
-        ax.xaxis.set_major_locator(plt.MaxNLocator(4))
-    axes[0].invert_yaxis(); axes[1].legend(frameon=False, fontsize=8, loc="lower right")
-    fig.savefig(join(args.out_dir, "blank_interval.png"), dpi=200); plt.close(fig)
+    co.to_csv(join(tdir, "blank_coefficients.csv"), index=False)   # mixed-model check of the correlations below
+    # all electrodes: sessions -> electrode -> subject x lobe; t vs 0 per lobe (fc.roi_stats); r1 vs r2 paired
+    L = E.groupby(["subject", "lobe", "electrode"]).mean(numeric_only=True).groupby(["subject", "lobe"]).mean().reset_index()
+    L = L.rename(columns={"subject": "sub"}).assign(roi=lambda d: "B-" + d["lobe"])
+    rows = []
+    for b in ("alpha", "high_gamma"):
+        L[f"dlong_{b}"] = L[f"r1long_{b}"] - L[f"r1short_{b}"]
+        L[f"d12_{b}"] = L[f"r1_{b}"] - L[f"r2_{b}"]
+        rows += [fc.roi_stats(L, f"{m}_{b}").assign(measure=f"{m}_{b}") for m in ("r1", "r2", "dlong", "d12")]
+    cs = pd.concat(rows)
+    cs.to_csv(join(tdir, "carryover_stats.csv"), index=False)
+    lab = {"r1_high_gamma": "Previous word", "r2_high_gamma": "Two words back",
+           "dlong_high_gamma": "Previous word,\nlong − short wait"}
+    fig, ax = plt.subplots(figsize=(7, 3.6), layout="constrained")   # high gamma
+    fc.roi_dot_panel(ax, {v: cs[cs["measure"] == m] for m, v in lab.items()}, "r with the current word's\nhigh-gamma response")
+    fig.savefig(join(args.out_dir, "carryover.png"), dpi=200); plt.close(fig)
 
     pd.set_option("display.width", 200)
     print("\n[variance components, % of single-event variance]\n",
