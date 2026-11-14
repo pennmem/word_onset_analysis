@@ -2,8 +2,8 @@
 
 One pass over the high-gamma pickles (responsive electrodes, plot_latency.response): per electrode, the average
 curve of each condition of each split (SPLITS below); per subject x lobe (or subregion) -> mean +/- SEM across
-subjects. Latency of a condition = cross-correlation of its average curve with the electrode's average curve
-(xcorr_latency, as for single word events), so a difference between conditions is the lag between them.
+subjects. Latency difference between two conditions = lag of one condition's average curve against the other's
+(xcorr_latency with the other as template, per electrode).
 Waveform figures are rows of WAVES (split, lobes, period). From the variance tables (trials.csv,
 electrode_sessions.csv): r of occipital vs each lobe's latency across word events, r of peak vs latency.
 
@@ -73,7 +73,6 @@ def collect(save_root: str) -> pd.DataFrame:
                 sp["occ_lat_half"], held = halves(np.nanmean(lat[:, h], 1)), set(occ[~h])
         for c in np.flatnonzero(resp):
             reg = str(p["reg_full"][c]); reg = reg[2:] if reg[:2] in ("L ", "R ") else reg
-            tmp = np.nanmean(x[:, c], 0)
             conds = dict(sp, region={reg: np.ones(len(x), bool)}) if lobe[c] == "occipital" else sp
             for s, cs in conds.items():
                 if (s in ("isi_q", "region") and lobe[c] != "occipital") or (s == "occ_lat_half" and c not in held):
@@ -86,16 +85,22 @@ def collect(save_root: str) -> pd.DataFrame:
                     curve = {"both": np.r_[curve["pre"], post], **curve}[SPLITS[s][0]]
                     rows.append({"sub": str(p["sid"][0]), "el": f"{p['sid'][0]}|{p['labels'][c]}", "lobe": lobe[c],
                                  "split": s, "cond": k, "isi": np.nanmean(isi[m]), "curve": curve,
-                                 "lat": xcorr_latency(post[None], t, tmp=tmp)[0][0], "peak": half_max(post, t)[1]})
+                                 "peak": half_max(post, t)[1]})
     tl = p["env_lo_t0_ms"] + p["env_step_ms"] * (np.arange(lo.shape[-1]) + 0.5)
     return pd.DataFrame(rows), {"pre": tl, "post": t, "both": np.r_[tl, t]}
 
 
-def contrast(d: pd.DataFrame, split: str, a, b, col: str) -> pd.DataFrame:
-    """a - b per electrode -> mean per subject x lobe (roi_stats table)."""
-    w = d[d["split"] == split].pivot_table(index=["sub", "lobe", "el"], columns="cond", values=col)
-    return ((w[a] - w[b]).dropna().groupby(["sub", "lobe"]).mean().reset_index(name=col)
-            .assign(roi=lambda v: "B-" + v["lobe"]))
+def contrast(d: pd.DataFrame, split: str, a, b, col: str, t: np.ndarray | None = None) -> pd.DataFrame:
+    """a - b per electrode -> mean per subject x lobe (roi_stats table). col "lat": lag of a's average curve against
+    b's (b as the template; the electrode's overall average would contain a and pull the lag toward 0)."""
+    s, idx = d[d["split"] == split], ["sub", "lobe", "el"]
+    if col == "lat":
+        w = s.pivot_table(index=idx, columns="cond", values="curve", aggfunc=lambda c: np.stack(list(c)).mean(0)).dropna()
+        v = pd.Series([xcorr_latency(r[a][-len(t):][None], t, tmp=r[b][-len(t):])[0][0] - half_max(r[b][-len(t):], t)[0]
+                       for _, r in w.iterrows()], index=w.index)
+    else:
+        w = s.pivot_table(index=idx, columns="cond", values=col); v = w[a] - w[b]
+    return v.dropna().groupby(["sub", "lobe"]).mean().reset_index(name=col).assign(roi=lambda v: "B-" + v["lobe"])
 
 
 def main() -> None:
@@ -152,7 +157,7 @@ def main() -> None:
         fig.savefig(join(out, f"{name}.png"), dpi=200); plt.close(fig)
 
     # 2D: lag of each lobe's late vs early average curve (late - early occipital words), per electrode
-    ss = fc.roi_stats(contrast(d, "occ_lat", "late", "early", "lat"), "lat")
+    ss = fc.roi_stats(contrast(d, "occ_lat", "late", "early", "lat", T["post"]), "lat")
     ss.to_csv(join(tab, "propagation_shift_stats.csv"), index=False)
     o, oc = ss.set_index("roi").loc["B-occipital"], fc.LOBE_COLORS["occipital"]
     fig, ax = plt.subplots(figsize=(4.2, 3.4), layout="constrained")
@@ -168,7 +173,7 @@ def main() -> None:
     fig, axes = plt.subplots(1, 2, figsize=(6.5, 3.4), layout="constrained")
     for ax, col, lab, yl in ((axes[0], "peak", "Response peak", f"{YLAB}, long − short ISI"),
                              (axes[1], "lat", "Latency", "Latency, long − short ISI (ms)")):
-        st = fc.roi_stats(contrast(d, "isi", "long", "short", col), col)
+        st = fc.roi_stats(contrast(d, "isi", "long", "short", col, T["post"]), col)
         st.to_csv(join(tab, f"isi_{col}_stats.csv"), index=False)
         fc.roi_dot_panel(ax, {lab: st}, yl); ax.get_legend().remove()
         print(st[["roi", "n_subjects", "mean", "sem", "q"]].round(3).to_string())
