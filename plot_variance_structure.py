@@ -59,9 +59,9 @@ OFFSET_BIN_MS = 20
 OFFSET_MAX_MS = 1300
 BANDS = {"alpha": "Alpha power", "high_gamma": "High-gamma power", "latency": "High-gamma latency\n(responsive electrodes)"}
 GROUPS = {   # stacked share segments: label -> (model terms, colour)
-    "Subject": (["subject"], "#1f4fa3"), "Region (within lobe)": (["region"], "#17becf"), "Electrode": (["electrode"], "#d62728"),
-    "Electrode in session": (["elsess"], "#f2c12e"),
-    "Session": (["session"], "#8c564b"), "List in session": (["sess_list"], "#ff7f0e"),
+    "Subject": (["subject"], "#1f4fa3"), "Region": (["region"], "#17becf"), "Electrode": (["electrode"], "#d62728"),
+    "Electrode:Session": (["elsess"], "#f2c12e"),
+    "Session": (["session"], "#8c564b"), "Session:List": (["sess_list"], "#ff7f0e"),
     "Task (serial position, list, word)": (["sp", "list", "item", "subj_item", "subj_sp", "list_sp", "sess_sp"], "#2ca02c"),
     "Word event": (["event"], "#7b4fa3"),
     "Residual (electrode, event)": (["Residual"], "#d9d9d9")}
@@ -85,6 +85,27 @@ def lag_r(v: np.ndarray, sp: np.ndarray, lst: np.ndarray, lag: int, cur: np.ndar
     if cur is not None:
         ok &= cur[lag:]
     return np.corrcoef(a[ok], b[ok])[0, 1] if ok.sum() >= 10 else np.nan
+
+
+def xcorr_latency(x: np.ndarray, t: np.ndarray, max_lag_ms: float = 200,
+                  tmp: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """(latency, best r) per event by cross-correlation (Woody 1967): the electrode's average curve (template, zero
+    before word onset) slid over each event's curve within 0-800 ms; latency = template half-max latency + the lag
+    of the best Pearson r (all events kept; best r saved for cutoff checks); NaN where the template has no half-max.
+    `tmp`: another template (e.g. the electrode's average when x holds condition averages)."""
+    tmp = np.nanmean(x, 0) if tmp is None else tmp
+    t0 = half_max(tmp, t)[0]
+    if not np.isfinite(t0):
+        return np.full(len(x), np.nan), np.full(len(x), np.nan)
+    step = t[1] - t[0]; K = int(round(max_lag_ms / step))
+    w = np.flatnonzero((t >= 0) & (t < 800))
+    tp = np.r_[np.zeros(K), tmp, np.zeros(K)]
+    S = np.stack([tp[K + w - L] for L in range(-K, K + 1)], 1)          # template shifted by each lag
+    S = (S - S.mean(0)) / (S.std(0) + 1e-12)
+    ev = x[:, w]; ev = (ev - ev.mean(1, keepdims=True)) / (ev.std(1, keepdims=True) + 1e-12)
+    R = ev @ S / len(w)
+    best = np.nanargmax(np.where(np.isfinite(R), R, -np.inf), 1)
+    return t0 + (best - K) * step, R[np.arange(len(x)), best]
 
 
 def task_columns(w: pd.DataFrame, blank: np.ndarray) -> pd.DataFrame:
@@ -166,15 +187,17 @@ def main() -> None:
                 e = use & np.isfinite(yg[:, c]) & np.isfinite(ya[:, c])
                 if e.sum() < 20:
                     continue
-                lat = half_max(x[e, c], t)[0] if resp[c] else np.full(e.sum(), np.nan)   # single-event half-max
+                lat, pk = half_max(x[e, c], t) if resp[c] else (np.full(e.sum(), np.nan),) * 2   # single-event half-max, peak
+                lat_xc, r_xc = xcorr_latency(x[e, c], t) if resp[c] else (np.full(e.sum(), np.nan),) * 2
                 for meas, v in (("alpha", ya[e, c]), ("high_gamma", yg[e, c]), ("latency", lat)):
                     for term in ("sp", "list"):
                         lv, fin = tc.loc[e, term].to_numpy(), np.isfinite(v)
                         s0, n0 = lev.get((sub, lobe[c], meas, term), (np.zeros(LEVELS), np.zeros(LEVELS)))
                         lev[(sub, lobe[c], meas, term)] = (s0 + np.bincount(lv[fin], v[fin], LEVELS), n0 + np.bincount(lv[fin], minlength=LEVELS))
+                reg = g["reg_full"][c]   # subregion within the lobe, hemispheres pooled
                 trial_rows.append(tc[e].assign(subject=sub, electrode=el, session=sess, lobe=lobe[c],
-                                               event=np.flatnonzero(e), alpha=ya[e, c], high_gamma=yg[e, c],
-                                               latency=lat, blank_ms=blank[e], design=design))
+                                               region=reg[2:] if reg[:2] in ("L ", "R ") else reg, event=np.flatnonzero(e), alpha=ya[e, c], high_gamma=yg[e, c],
+                                               latency=lat, latency_xc=lat_xc, xc_r=r_xc, peak=pk, blank_ms=blank[e], design=design))
                 lags, res = {}, {}   # 5. carry-over: serial-position means out, then r with the word 1 / 2 back
                 for k, v in (("alpha", ya[:, c]), ("high_gamma", yg[:, c])):
                     v = np.where(e, v, np.nan)
@@ -184,6 +207,13 @@ def main() -> None:
                     res[k] = v - pd.Series(v).groupby(lst_).transform("mean").to_numpy()   # 3. list means out too
                 ok_ = np.isfinite(res["alpha"]) & np.isfinite(res["high_gamma"])
                 lags["r_fast"] = np.corrcoef(res["alpha"][ok_], res["high_gamma"][ok_])[0, 1]
+                if resp[c]:   # timing: single-event peak vs cross-correlation latency, serial-position and list means out
+                    lx, px = np.full(len(e), np.nan), np.full(len(e), np.nan); lx[e], px[e] = lat_xc, pk
+                    for g_ in (sp_, lst_):
+                        lx = lx - pd.Series(lx).groupby(g_).transform("mean").to_numpy()
+                        px = px - pd.Series(px).groupby(g_).transform("mean").to_numpy()
+                    ok_ = np.isfinite(lx) & np.isfinite(px)
+                    lags["r_amp_lat"] = np.corrcoef(px[ok_], lx[ok_])[0, 1] if ok_.sum() >= 20 else np.nan
                 lv_rows.append({**lags, "subject": sub, "electrode": el, "session": sess, "lobe": lobe[c],
                                 "d_alpha": a["cohens_d"][c], "d_hg": g["cohens_d"][c],
                                 "r_trial": np.corrcoef(ya[e, c], yg[e, c])[0, 1], "n": e.sum(),
@@ -368,7 +398,7 @@ def main() -> None:
     cs = pd.concat(rows)
     cs.to_csv(join(tdir, "carryover_stats.csv"), index=False)
     lab = {"r1_high_gamma": "Previous word", "r2_high_gamma": "Two words back",
-           "dlong_high_gamma": "Previous word,\nlong − short wait"}
+           "dlong_high_gamma": "Previous word,\nlong − short ISI"}
     fig, ax = plt.subplots(figsize=(7, 3.6), layout="constrained")   # high gamma
     fc.roi_dot_panel(ax, {v: cs[cs["measure"] == m] for m, v in lab.items()}, "r with the current word's\nhigh-gamma response")
     fig.savefig(join(args.out_dir, "carryover.png"), dpi=200); plt.close(fig)

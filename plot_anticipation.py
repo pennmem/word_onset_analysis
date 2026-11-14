@@ -7,8 +7,8 @@ trial-mean high-gamma envelope minus the (common) word-off mean. Long - short pe
 electrode -> subject mean per ROI -> mean +/- SEM, one-sample t vs 0, BH-FDR over
 ROIs (fc.roi_stats).
 Also before the word: the mean envelope in the word-off window (-700..-100 ms, inside every blank), long - short.
--> figures/latency/hg_anticipation_word_on.png (peak change per ROI; bars), _box.png (subjects), _prepost.png (before the word and peak, lobe means +/- SEM)
-   figures/latency/wait_times_word_on.png (blank durations; central 95% of the session medians shaded, overall median dashed)
+-> figures/latency/hg_anticipation_word_on.png (peak change per ROI; bars), _box.png (subjects) and _pre.png (before the word, lobe means +/- SEM)
+   figures/latency/wait_times_word_on.png (ISI durations; central 95% of the session medians shaded, overall median dashed)
 
     python plot_anticipation.py [--simulation-tag TAG]
 """
@@ -47,7 +47,8 @@ def main() -> None:
             if roi[c] is None:
                 continue
             r = {"sub": str(p["sid"][0]), "label": str(p["labels"][c]), "roi": roi[c]}
-            r["peak"] = half_max(np.nanmean(x[long, c], 0), t)[1] - half_max(np.nanmean(x[short, c], 0), t)[1]
+            pk_l, pk_s = (half_max(np.nanmean(x[m, c], 0), t)[1] for m in (long, short))
+            r["peak"] = pk_l - pk_s
             r["pre"] = np.nanmean(pre[long, c]) - np.nanmean(pre[short, c])
             rows.append(r)
     el = pd.DataFrame(rows).groupby(["sub", "label", "roi"], as_index=False)[["peak", "pre"]].mean()
@@ -60,16 +61,16 @@ def main() -> None:
     st.to_csv(fc.table_path(f"{stem}_peak_stats.csv"), index=False)
     sp = fc.roi_stats(tbl, "pre")   # pre-stimulus: the word-off window (-700..-100 ms), same units and axis as the peak
     sp.to_csv(fc.table_path(f"{stem}_pre_stats.csv"), index=False)
-    fig, ax = plt.subplots(figsize=(5.5, 3.6), layout="constrained")
-    fc.roi_dot_panel(ax, {"Pre-stimulus average": sp, "Response peak": st}, "High gamma,\nlong − short wait")
-    fig.savefig(f"{stem}_prepost.png", dpi=200); fig.savefig(f"{stem}_prepost.pdf"); plt.close(fig)
+    fig, ax = plt.subplots(figsize=(3.4, 3.4), layout="constrained")   # before the word: its own scale
+    fc.roi_dot_panel(ax, {"End of ISI": sp}, "High gamma power, long − short ISI")
+    fig.savefig(f"{stem}_pre.png", dpi=200); fig.savefig(f"{stem}_pre.pdf"); plt.close(fig)
     allsub = el.groupby("sub")["peak"].mean()
     print(f"[anticipation] peak, all electrodes: {allsub.mean():+.4g} ± "
           f"{allsub.std() / np.sqrt(len(allsub)):.3g} SEM (n={len(allsub)} subjects)")
     for name, draw in (("", lambda ax: fc.roi_bar_panel(ax, st)),
                        ("_box", lambda ax: fc.roi_panel(ax, tbl, "peak", np.random.default_rng(0), stats=st,
                                                         ylim=(-0.5, 0.5)))):
-        fc.roi_figure([("High-gamma response peak\nlong − short wait", draw)], args.out_dir, f"hg_anticipation_{BEH}{name}")
+        fc.roi_figure([("High-gamma response peak\nlong − short ISI", draw)], args.out_dir, f"hg_anticipation_{BEH}{name}")
 
     if getattr(args, "simulation_tag", None):   # wait times come from the events: the same in every simulation
         return
@@ -83,7 +84,7 @@ def main() -> None:
     ax.axvspan(lo95, hi95, color="tab:red", alpha=0.25, lw=0, zorder=3,
                label=f"95% of session\nmedians ({lo95:.0f}–{hi95:.0f} ms)")
     ax.axvline(np.median(w), color="tab:red", ls="--", lw=1, zorder=4, label=f"overall median ({np.median(w):.0f} ms)")
-    ax.set_xlabel("Blank before the word (ms)", fontsize=12)
+    ax.set_xlabel("ISI before the word (ms)", fontsize=12)
     ax.set_ylabel("Words", fontsize=12)
     ax.legend(frameon=False, fontsize=10)
     ax.spines[["top", "right"]].set_visible(False)

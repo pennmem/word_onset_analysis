@@ -70,21 +70,24 @@ if (mode == "latency") {
   # instead of recall,
   #   y ~ (1|item) + (1|sp) + (1|list) + (1|subject) + (1|subject:item) + (1|session) + (1|subject:sp)
   #       + (1|list:sp) + (1|session:list) + (1|session:sp)
-  # plus the terms recall does not have: (1|electrode) + (1|electrode:session) + (1|event).
+  # plus the terms recall does not have: (1|electrode) + (1|electrode:session) + (1|event), and (1|region)
+  # (subregion within the lobe, hemispheres pooled) where the lobe has >= 2. Latency: single-event cross-correlation.
   # event: one word in one session, shared by the lobe's electrodes; the residual is what is
   # left per electrode and event. Share of a term = its variance / total. trials.csv holds the electrodes
   # the Python side chose (at most N per subject and lobe). Optional 3rd argument: parallel fits.
   suppressMessages(library(parallel))
   cores <- if (length(args) >= 3) as.integer(args[3]) else 6
   tr <- add_terms(fread(file.path(path, "trials.csv")))
-  f <- as.formula(paste("~", rand))
   jobs <- CJ(lobe = unique(tr$lobe), band = c("alpha", "high_gamma", "latency"))
   fits <- mclapply(seq_len(nrow(jobs)), function(i) {
     lb <- jobs$lobe[i]; b <- jobs$band[i]
     d <- tr[lobe == lb & is.finite(get(b)) & (b == "latency" | in_power)]   # latency: its own electrodes
+    y <- if (b == "latency") "latency_xc" else b
+    d <- d[is.finite(get(y))]
     if (uniqueN(d$subject) < 5) return(NULL)
     t0 <- Sys.time()
-    m <- tryCatch(lmer(update(f, as.formula(paste(b, "~ ."))), data = d,
+    reg <- if (uniqueN(d$region) >= 2) "+ (1 | region)" else ""
+    m <- tryCatch(lmer(as.formula(paste(y, "~", rand, reg)), data = d,
                        control = lmerControl(optimizer = "bobyqa", calc.derivs = FALSE)),
                   error = function(e) { message(lb, " ", b, ": ", conditionMessage(e)); NULL })
     if (is.null(m)) return(NULL)

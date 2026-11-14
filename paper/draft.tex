@@ -68,7 +68,7 @@
 \date{}
 
 \begin{document}
-\newcommand{\abstracttext}{Scalp EEG, MEG and fMRI studies establish the stages of visual word processing, and intracranial studies typically analyze how word-evoked activity varies with cognitive state, yet studies of the word response itself, often small and ventral-stream focused, leave network dynamics and replicability largely untested. Recording across the brain in 362 neurosurgical patients performing delayed free recall, we compare each word with its pre-stimulus blank screen. As expected, occipital regions respond most strongly, with decreased alpha (8-13 Hz) and increased high-gamma (70-150 Hz) power, although magnitude varies widely across patients. Beyond the ventral stream, frontal regions show an alpha increase, suggesting suppression. High-gamma latencies increase from lateral occipital cortex (~120 ms) to orbitofrontal cortex (~320 ms); occipital regions reliably lead most lobes and frontal regions lag most, but adjacent lobes largely overlap. Alpha synchrony rises, with hubs shifting forward from occipital to parietal to temporal regions, while the hippocampus does not join. Despite variability across subjects, power changes within subjects are stable across sessions (median r = 0.67 alpha, 0.81 high gamma), but synchrony changes are not (0.19, 0.14); across subjects, only occipital connectivity replicates (r = 0.90). The response also carries cognitive effects: occipital responses are larger after longer pre-stimulus periods, consistent with temporal expectation, and single-lobe classifiers weakly predict later recall, in frontal regions even before the response begins. These results establish where, when and how reliably the brain responds to words, a reference for interpreting cognitive effects measured during word presentation.}
+\newcommand{\abstracttext}{Scalp EEG, MEG and fMRI studies establish the stages of visual word processing, and intracranial studies typically analyze how word-evoked activity varies with cognitive state, yet studies of the word response itself, often small and ventral-stream focused, leave network dynamics and replicability largely untested. Recording across the brain in 362 neurosurgical patients performing delayed free recall, we compare each word with the inter-stimulus interval (ISI) before it. As expected, occipital regions respond most strongly, with decreased alpha (8-13 Hz) and increased high-gamma (70-150 Hz) power, although magnitude varies widely across patients. Beyond the ventral stream, frontal regions show an alpha increase, suggesting suppression. High-gamma latencies increase from lateral occipital cortex (~120 ms) to orbitofrontal cortex (~320 ms); occipital regions reliably lead most lobes and frontal regions lag most, but adjacent lobes largely overlap. Alpha synchrony rises, with hubs shifting forward from occipital to parietal to temporal regions, while the hippocampus does not join. Despite variability across subjects, power changes within subjects are stable across sessions (median r = 0.67 alpha, 0.81 high gamma), but synchrony changes are not (0.19, 0.14); across subjects, only occipital connectivity replicates (r = 0.90). The response also carries cognitive effects: occipital responses are larger after longer ISIs, consistent with temporal expectation, and single-lobe classifiers weakly predict later recall, in frontal regions even before the response begins. These results establish where, when and how reliably the brain responds to words, a reference for interpreting cognitive effects measured during word presentation.}
 \maketitle
 
 
@@ -110,7 +110,7 @@ large dataset.
 Beyond local activity, word onset may change how regions synchronize. Alpha phase synchrony is thought 
 to coordinate distant regions \citep{Palva_2007}, and in free recall, low-frequency synchrony between regions 
 increases during successful encoding and retrieval \citep{Solomon_2017,Rao_2025}. The response may also 
-depend on when the word is expected: the blank before each word varies in length, and the longer it lasts, 
+depend on when the word is expected: the inter-stimulus interval (ISI) before each word varies in length, and the longer it lasts, 
 the more expected the word becomes \citep{Nobre_2017}. Finally, spectral features recorded while a word 
 is studied predict whether it will be recalled \citep{Ezzyat_2017}, and comparing recalled with forgotten 
 words region by region, HFA predicting later recall appears first in visual, fusiform and medial 
@@ -123,18 +123,18 @@ classifiers.
 \subsection*{The present study }\label{intro-present}
 %(change/delete heading)
 Here we characterize the word-onset response in 362 neurosurgical subjects performing delayed free recall, 
-contrasting each word with the blank screen before it. We ask (1) which regions respond, and in what order;
+contrasting each word with the ISI before it. We ask (1) which regions respond, and in what order;
 (2) how regions synchronize, using phase and envelope connectivity; (3) whether the response depends 
-on how long the subject waited for the word; (4) whether, where and when single-event responses
+on the length of the ISI before the word; (4) whether, where and when single-event responses
 predict later recall; and (5) whether each subject's response is reliable across sessions.
 
 \section*{Methods}\label{methods}
 
 \subsection*{Data and cohort}\label{data-and-cohort}
-We analyzed intracranial EEG (iEEG) recordings from 362 subjects with pharmacoresistant epilepsy (x males, y females) who completed a delayed free-recall task while implanted with electrodes for clinical seizure monitoring. On each trial, subjects studied a list of words, completed an arithmetic distractor task (20--25 s of problems of the form ``$A + B + C = ??$'', with $A$, $B$ and $C$ drawn from the integers 1--9), and then recalled aloud as many words as they could during a 30 s retrieval period (45 s in a variant of the task). Lists were drawn from a pool of common English nouns; in catFR1, each list was built from words in a small number of semantic categories. A countdown preceded each list. Each word stayed on screen for 1600 ms and was followed by a blank screen of 750--1000 ms (800--1200 ms in the variant). A session consisted of 12 trials of 12 words (25 trials of 15 words in the variant). Data were collected as part of a multi-site collaboration at Columbia University Medical Center (New York, NY), Dartmouth-Hitchcock Medical Center (Lebanon, NH), Emory University Hospital (Atlanta, GA), the Hospital of the University of Pennsylvania (Philadelphia, PA), the Mayo Clinic (Rochester, MN), the National Institutes of Health (Bethesda, MD), the University of Colorado Anschutz Medical Campus (Aurora, CO), the University of Texas Health Science Center at San Antonio (San Antonio, TX), the University of Texas Southwestern Medical Center (Dallas, TX), and Thomas Jefferson University Hospital (Philadelphia, PA). Electrode type and placement were determined solely by clinical needs. Each site's institutional review board approved the protocol, and all subjects gave informed consent. EEG was recorded at site-specific sampling rates (200--2000 Hz) and aligned to behavioral events using hardware synchronization pulses or online timing messages.
+We analyzed intracranial EEG (iEEG) recordings from 362 subjects with pharmacoresistant epilepsy (x males, y females) who completed a delayed free-recall task while implanted with electrodes for clinical seizure monitoring. On each trial, subjects studied a list of words, completed an arithmetic distractor task (20--25 s of problems of the form ``$A + B + C = ??$'', with $A$, $B$ and $C$ drawn from the integers 1--9), and then recalled aloud as many words as they could during a 30 s retrieval period (45 s in a variant of the task). Lists were drawn from a pool of common English nouns; in catFR1, each list was built from words in a small number of semantic categories. A countdown preceded each list. Each word stayed on screen for 1600 ms and was followed by a blank-screen inter-stimulus interval (ISI) of 750--1000 ms (800--1200 ms in the variant). A session consisted of 12 trials of 12 words (25 trials of 15 words in the variant). Data were collected as part of a multi-site collaboration at Columbia University Medical Center (New York, NY), Dartmouth-Hitchcock Medical Center (Lebanon, NH), Emory University Hospital (Atlanta, GA), the Hospital of the University of Pennsylvania (Philadelphia, PA), the Mayo Clinic (Rochester, MN), the National Institutes of Health (Bethesda, MD), the University of Colorado Anschutz Medical Campus (Aurora, CO), the University of Texas Health Science Center at San Antonio (San Antonio, TX), the University of Texas Southwestern Medical Center (Dallas, TX), and Thomas Jefferson University Hospital (Philadelphia, PA). Electrode type and placement were determined solely by clinical needs. Each site's institutional review board approved the protocol, and all subjects gave informed consent. EEG was recorded at site-specific sampling rates (200--2000 Hz) and aligned to behavioral events using hardware synchronization pulses or online timing messages.
 
 \subsection*{Events and analysis windows}\label{events}
-We compared a ``word on'' window (0--600 ms after word onset) with a ``word off'' window ($-700$ to $-100$ ms, the blank screen before the same word), so that each pair of windows came from the same word presentation. The word-off window ends 100 ms before onset, and because the shortest blank is 750 ms, it starts at least 50 ms after the previous word left the screen. Both windows are 600 ms long, so spectral estimates have the same resolution and bias in each. We excluded the first word of each list, as it follows the countdown rather than a blank screen. After exclusions, X $\pm$ Y (mean $\pm$ SD across subjects) word events per session remained.
+We compared a ``word on'' window (0--600 ms after word onset) with a ``word off'' window ($-700$ to $-100$ ms, the ISI before the same word), so that each pair of windows came from the same word presentation. The word-off window ends 100 ms before onset, and because the shortest ISI is 750 ms, it starts at least 50 ms after the previous word left the screen. Both windows are 600 ms long, so spectral estimates have the same resolution and bias in each. We excluded the first word of each list, as it follows the countdown rather than an ISI. After exclusions, X $\pm$ Y (mean $\pm$ SD across subjects) word events per session remained.
 
 \begin{figure*}[!tp]
 \centering
@@ -147,9 +147,9 @@ We compared a ``word on'' window (0--600 ms after word onset) with a ``word off'
   % one list: countdown, words with blanks, distractor, recall (x in cm)
   \node[box, fill=black!25, minimum width=1.6cm] at (0.8,0) {3, 2, 1\\[-1pt]\scriptsize countdown};
   \node[word, minimum width=2.2cm] at (2.9,0) {\textbf{CHAIR}\\[-1pt]\scriptsize 1600 ms};
-  \node[blank, minimum width=1.4cm] at (4.9,0) {blank};
+  \node[blank, minimum width=1.4cm] at (4.9,0) {ISI};
   \node[word, minimum width=2.2cm] at (6.9,0) {\textbf{RIVER}\\[-1pt]\scriptsize 1600 ms};
-  \node[blank, minimum width=1.4cm] at (8.9,0) {blank};
+  \node[blank, minimum width=1.4cm] at (8.9,0) {ISI};
   \node at (10.2,0) {\Large\dots};
   \node[box, fill=black!45, text=white, minimum width=2.8cm] at (12.2,0) {$7+3+5=\,?$\\[-1pt]\scriptsize distractor, 20--25 s};
   \node[box, draw=black!40, minimum width=3.2cm] at (15.4,0) {Free recall\\[-1pt]\scriptsize 30--45 s};
@@ -162,7 +162,7 @@ We compared a ``word on'' window (0--600 ms after word onset) with a ``word off'
   \draw[densely dashed, black!50] (4.2,-0.55) -- (2.475,-2.2) (8.0,-0.55) -- (14.5,-2.2);
   \fill[black!8] (2.475,-2.2) rectangle (8,-2.65);
   \fill[black!85] (8,-2.2) rectangle (14.5,-2.65);
-  \node[text=black!70, font=\sffamily\scriptsize] at (5.24,-2.425) {blank};
+  \node[text=black!70, font=\sffamily\scriptsize] at (5.24,-2.425) {ISI};
   \node[text=white, font=\sffamily\scriptsize] at (11.25,-2.425) {\textbf{RIVER}};
   \node[win, fill={rgb,255:red,232;green,180;blue,160}, minimum width=3.9cm] at (5.4,-3.1) {\textbf{Word off}};
   \node[win, fill={rgb,255:red,168;green,230;blue,184}, minimum width=3.9cm] at (9.95,-3.1) {\textbf{Word on}};
@@ -173,7 +173,7 @@ We compared a ``word on'' window (0--600 ms after word onset) with a ``word off'
 \end{tikzpicture}}
 \end{minipage}\\[8pt]
 \panelc{B}{0.6}{img/fig1b_coverage.png}\hfill\panelc{C}{0.38}{img/fig1c_example.png}
-\caption{Task and analysis. (A) Free-recall task. Each list began with a countdown, followed by 12 or 15 words, each shown for 1600 ms and separated by a 750--1000 ms blank screen (800--1200 ms in the variant), then an arithmetic distractor and aloud recall. Each word's response (word on, 0--600 ms) was compared with the blank screen before it (word off, $-700$ to $-100$ ms). The first word of each list follows the countdown and was excluded. (B) Every analyzed bipolar pair at its MNI location, coloured by region of interest (hemispheres pooled); subjects and electrodes per region in the legend. (C) High-gamma power at an example occipital electrode, divided by its word-off mean (mean and 95\% CI across word events), with the half-maximum latency marked.}
+\caption{Task and analysis. (A) Free-recall task. Each list began with a countdown, followed by 12 or 15 words, each shown for 1600 ms and separated by a 750--1000 ms blank-screen inter-stimulus interval (ISI; 800--1200 ms in the variant), then an arithmetic distractor and aloud recall. Each word's response (word on, 0--600 ms) was compared with the ISI before it (word off, $-700$ to $-100$ ms). The first word of each list follows the countdown and was excluded. (B) Every analyzed bipolar pair at its MNI location, coloured by region of interest (hemispheres pooled); subjects and electrodes per region in the legend. (C) High-gamma power at an example occipital electrode, divided by its word-off mean (mean and 95\% CI across word events), with the half-maximum latency marked.}
 \label{fig:study}
 \end{figure*}
 
@@ -206,7 +206,7 @@ To compare latencies between lobes while accounting for multiple electrodes per 
 and all 15 pairwise lobe contrasts were Holm-corrected.
 
 \subsection*{Anticipation}\label{anticipation}
-To test whether the response depends on how long subjects waited for the word, we used the same responsive electrodes as in the latency analysis and split each session's word events at its median blank length. For each electrode, we expressed the high-gamma response, averaged over word events, after long and after short blanks relative to the same baseline, the electrode's word-off mean over all events. A difference between groups therefore cannot come from a difference in their baselines. The effect was the peak response (0--800 ms) after long blanks minus the peak after short blanks. We averaged effects per subject and region and tested them against zero with one-sample $t$ tests, Benjamini-Hochberg corrected across regions.
+To test whether the response depends on the length of the ISI, we used the same responsive electrodes as in the latency analysis and split each session's word events at its median ISI. For each electrode, we expressed the high-gamma response, averaged over word events, after long and after short ISIs relative to the same baseline, the electrode's word-off mean over all events. A difference between groups therefore cannot come from a difference in their baselines. The effect was the peak response (0--800 ms) after long ISIs minus the peak after short ISIs. We averaged effects per subject and region and tested them against zero with one-sample $t$ tests, Benjamini-Hochberg corrected across regions.
 
 \subsection*{Recall prediction}\label{recall-prediction}
 To test when and where the word-onset response predicts later recall (encoding contrast: recalled vs.\ not recalled words), we averaged the high-gamma response (computed as for latency) in 100 ms windows from 0--1000 ms and z-scored it within each session. For every subject, lobe (at least 5 electrodes) and window, we trained an L2-regularized logistic regression with balanced class weights. Following \citet{DeHaan_2025}, models were cross-validated by leaving out one session at a time in subjects with at least three sessions per electrode montage. For each held-out session, the penalty was chosen from 52 values ($C = 10^{-6}$ to $10^{11}$) by an inner leave-one-session-out cross-validation on the remaining sessions, and the model was refit on all of them. Performance was the area under the ROC curve (AUC) within each held-out session, averaged per montage and then per subject. Computing AUC within a session avoids the below-chance bias of AUC on pooled held-out predictions \citep{Jamalabadi_2016}, so chance is 0.5. Across subjects, we tested AUC above 0.5 with one-sided $t$ tests, Benjamini-Hochberg corrected over lobes $\times$ windows.
@@ -265,17 +265,17 @@ Over time (Figure~\ref{fig:synchrony}B), alpha synchrony across the whole networ
 
 Relative to the rest of the network (Supplementary Figure~\ref{fig:hubs-relative}), occipital cortex stood out in both hemispheres at 0--300 ms, whereas left and right temporal cortex (100--300 ms) and left hippocampus (100--400 and 400--600 ms) were less synchronized than the network. In high gamma, no region stood out.
 
-\subsection*{4. Anticipation (blank length before the
+\subsection*{4. Anticipation (ISI before the
 word)}\label{anticipation-blank-length-before-the-word}
 
 \begin{figure*}[!tp]
 \centering
 \panelc{A}{0.36}{img/fig9a_wait_times.png}\hfill\panelc{B}{0.62}{img/fig9_anticipation.png}
-\caption{Temporal expectation. (A) Duration of the blank before each word, all words; shaded: central 95\% of the session medians; dashed: overall median; events are split at each session's own median. (B) High-gamma response peak after long minus short waits, responsive electrodes only, both measured against the same word-off baseline, averaged over all events; mean $\pm$ SEM across subjects; stars: BH-FDR.}
+\caption{Temporal expectation. (A) ISI before each word, all words; shaded: central 95\% of the session medians; dashed: overall median; events are split at each session's own median. (B) High-gamma response peak after long minus short ISIs, responsive electrodes only, both measured against the same word-off baseline, averaged over all events; mean $\pm$ SEM across subjects; stars: BH-FDR.}
 \label{fig:anticipation}
 \end{figure*}
 
-The occipital high-gamma peak was larger after long than after short waits (Figure~\ref{fig:anticipation}B; $+0.058$, $q < .001$), and no other region differed. Both groups were measured against the same baseline, so this is not a baseline difference. It is consistent with temporal expectation enhancing visual responses \citep[][monkey V1]{Lima_2011,Nobre_2017}, although after short waits the response may also have recovered less from the previous word.
+The occipital high-gamma peak was larger after long than after short ISIs (Figure~\ref{fig:anticipation}B; $+0.058$, $q < .001$), and no other region differed. Both groups were measured against the same baseline, so this is not a baseline difference. It is consistent with temporal expectation enhancing visual responses \citep[][monkey V1]{Lima_2011,Nobre_2017}, although after short ISIs the response may also have recovered less from the previous word.
 
 \subsection*{5. Recall prediction over the response (encoding
 contrast)}\label{recall-prediction-over-the-response-encoding-contrast}
@@ -318,7 +318,7 @@ While we observe a substantial decrease in alpha power in the occipital cortex, 
 
 \subsection*{Expectation}\label{disc-expectation}
 
-Temporally expected events evoke larger visual responses: in monkey V1, gamma increases and alpha decreases when a stimulus is expected \citep{Lima_2011}, and expectation speeds and enhances visual processing in humans \citep{Doherty_2005}. The larger occipital response after longer waits fits this account. Because long- and short-wait events were measured against the same baseline, averaged over all events, the effect cannot come from a raised baseline after short waits; an alternative is that the visual response recovers less from the previous word when the interval is short.
+Temporally expected events evoke larger visual responses: in monkey V1, gamma increases and alpha decreases when a stimulus is expected \citep{Lima_2011}, and expectation speeds and enhances visual processing in humans \citep{Doherty_2005}. The larger occipital response after longer ISIs fits this account. Because long- and short-ISI events were measured against the same baseline, averaged over all events, the effect cannot come from a raised baseline after short ISIs; an alternative is that the visual response recovers less from the previous word when the interval is short.
 
 \subsection*{Recall prediction}\label{disc-recall}
 
@@ -331,7 +331,7 @@ Recall prediction appeared only after the early visual response, briefly in occi
 \item
   Word-off baseline starts \textasciitilde80-410 ms after the previous
   word's offset: possible offset response / anticipation in the
-  baseline; the blank-length analysis (Results 4) uses one
+  baseline; the ISI analysis (Results 4) uses one
   baseline averaged over all events and is not affected by it.
 \item
   Evoked and induced activity 

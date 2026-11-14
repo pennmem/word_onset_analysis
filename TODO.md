@@ -11,6 +11,24 @@
   Currently `subtract_erp: false`. Also covers the early high-gamma AEC-c hubs (0–200 ms,
   within-region pairs), which may be a shared stimulus-locked envelope rise.
 
+## Gap / prior work (2026-11-11 search; verify before citing)
+- Long vs short pre-stimulus period (Fig. 3A) is known in visual cortex: short ISI -> smaller visual-cortex response,
+  recovery with longer ISI (Groen et al. 2022 J Neurosci, ECoG broadband; Brands et al. 2024 PLoS Comput Biol, slower
+  recovery in higher visual areas); V1 high gamma (80-150 Hz) smaller after shorter ISI, more prior stimuli and lower
+  pre-stimulus high gamma ("refractory"; Asano group, 2011 abstract / PubMed 21945696 -- confirm). Contrast: stimulus
+  on vs baseline, flashes / images, not words in a memory task.
+- Drift / autocorrelation (Fig. 3B neighbours): Manning et al. 2011 PNAS (pattern similarity, context reinstatement at
+  recall); Folkerts et al. 2018 Nat Commun (temporal-lobe drift); Kulkarni & Lega (eLife reviewed preprint 90576,
+  representational drift and boundaries in free recall). All multivariate pattern drift tied to memory; Fig. 3B is
+  univariate response-size carry-over. Riley also mentioned a Broitman paper (scalp EEG context reinstatement found;
+  check which one he meant).
+- Ongoing vs evoked: He 2013 J Neurosci (fMRI, negative interaction); He & Zempel 2013 PLoS Comput Biol (ECoG,
+  inverted-U pre- and post-stimulus vs behaviour); iEEG variability quenching blended with pre-stimulus dynamics
+  (Commun Biol 2021). Circularity caution when correlating pre-stimulus and evoked activity of the same signal.
+- Memory-relevant brain state: Ezzyat et al. 2017 Curr Biol / 2018 Nat Commun (encoding-state classifier, closed-loop
+  stimulation) -- the multivariate precedent for "state predicts recall".
+- No single-trial variance decomposition of the iEEG word response found (subject / electrode / event).
+
 ## Paper: references to check
 - Edwards et al. 2009: confirm it supports "high gamma is broadband, not an oscillation" (Power Methods).
 - Azarion et al. 2014: confirm it is the right citation for volumetric (depth) vs surface (grid/strip) labels.
@@ -64,6 +82,51 @@ in the proposal text. Every model or analysis choice and its run cost goes to th
   every timescale: broadband / aperiodic shift? (see Analyses: alpha vs high gamma).
 - Carry-over (Fig. 5B): mixed model with Aim 1's terms agrees with the correlations (prev x blank |b| <= 0.003) --
   methods / supplement, not the proposal text.
+
+- Baseline check for Fig. 1 (2026-11-11): the response uses the electrode-session's mean word-off; refit the variance
+  model with each event's own word-off (pa / pg, already computed in the pass) -> does the word-event share shrink
+  (slow state present before and after the word)? Hours for all regions; confirm before running.
+- Single-subject variance fits (Riley): occipital pilot done 2026-11-11 (99 subjects; scratch single_subject/): individual
+  splits match the group; high-gamma electrode share 0-50% across subjects; region large in a few. Decide: Fig. 1 panel
+  or supplement; other lobes; move the scripts into the repo. Older related figures: variance_partition.png
+  (method of moments, stable shares over time / frequency) and carpet_example.png (git bbbc6cc).
+- Timing in every magnitude analysis (user 2026-11-11): (1) wait -> latency done (no change); (2) does the momentary
+  state change timing too (event-level amplitude vs latency, same electrode, as 2C's word-event column; vision: stronger
+  stimuli -> larger and earlier); (3) is timing variability inherited from early visual cortex or added per stage
+  (same word, occipital vs temporal / frontal latency) -> pairs with Fig. 1C (latency mostly unexplained) to question
+  the feedforward picture. (2) and (3) need the cross-correlation latency first.
+  Done 2026-11-11 (scratch timing/): (3) frontal timing ~independent of occipital (corrected r 0.08; temporal 0.30);
+  caveats: reliability 0.17-0.34, group-level correction, different subjects per pair. (2) with each event's peak: r 0.01-0.04,
+  size and timing nearly independent (the window-mean version, -0.06 to -0.17, was an artefact).
+  Waveforms (scratch timing/waveforms.py): words split by occipital latency -> temporal ~50 ms earlier, frontal /
+  limbic / hippocampus overlap. Early-occipital words are already elevated at onset (~0.12 vs < 0 for late): part of
+  "early" is the pre-stimulus level (state) -> test with the pre-stimulus-level analysis; caveat for the latency
+  estimate (template matching may lock onto an elevated start). Move the timing scripts into the repo. Narrative idea: the paper around
+  timing / waiting / lengths.
+- Word offset effects (user 2026-11-11, raised by Fig. 4A): after short waits occipital high gamma is still elevated at
+  -700 ms, decaying by ~-500 ms -- the tail of the previous word's offset response. Plan: occipital high gamma aligned to
+  the previous word's offset (time since it disappeared), short vs long waits; size of the offset response and when it
+  has decayed vs the next word's onset. section 4 (offset_recovery.png) already re-aligns the word-off window but pools
+  waits and has the coverage problem below. Done 2026-11-11 (offset.py): the quartiles collapse onto one offset-aligned
+  decay (over ~300 ms after the offset). Open: the small onset-aligned rise in the last ~200 ms (anticipation?).
+  2026-11-12 pilot (scratch timing/anticipation.py: offset- + onset-locked + period x onset-locked kernels) suggests
+  the rise grows with the period (temporal q = .01, occipital n.s.), but with periods only 800-1000 ms the split from a
+  slow offset-locked drift rests on an assumption; parked (user: "maybe not the best"). Also: the
+  offset itself and the first ~100 ms after it are not cached (env_hi ends at 1000 ms, words stay 1.6 s).
+- Fig. 2A cross-correlation latency (2026-11-12): latency = the electrode-session template's half-max + the best lag,
+  so the template's half-max is a constant per electrode-session. The large electrode-in-session share (22-25% in
+  temporal, limbic, hippocampus; 0.5-2% in occipital, parietal) may be that half-max varying between sessions where the
+  average response is weak. Check: refit on the lag alone, or with one template per electrode across sessions.
+- Unifying figure (2026-11-11): every factor as % of single-event variance explained, same units as Fig. 1, per band:
+  subregion, serial position, list, pre-stimulus wait length, previous word's response, pre-stimulus level, shared
+  word-event component; external vs internal. Most are model terms already; wait length / previous word / pre-stimulus
+  level as extra terms.
+- Pre-stimulus level as internal state: per event, the pre-stimulus HG / alpha level (cached word-off window) vs
+  that event's response (per electrode-session r, as 3B) -> partner panel to Fig. 3A (wait length = external timing).
+- 2C as "one state or several": done 2026-11-11 by electrode halves (corrected r -0.13 to 0.19; ceilings.py); the
+  BLUP version from the Fig. 1 models is an alternative. Riley: the same pattern across regions in all 3 timescale columns looked odd -> check.
+- Final figure: does any of it matter for behaviour -- do the internal-state parts (shared word-event component,
+  pre-stimulus level) vs the external parts predict recall?
 
 **Data quality**
 - Fig. 5A response peak: parietal mean +0.07 with a large SEM from R1323T (4.4; the known artifact subject below);
