@@ -167,7 +167,6 @@ def main() -> None:
                 textcoords="offset points", xytext=(0, 4), ha="right", fontsize=8, color=oc)
     fc.roi_dot_panel(ax, {"Late $-$ early occipital words": ss[ss["roi"] != "B-occipital"]},
                      "Latency shift (ms)", lobes=[lb for lb in fc.LOBES if lb != "occipital"])
-    ax.legend(frameon=False, fontsize=7, loc="center left")
     fig.savefig(join(out, "propagation_shift.png"), dpi=200); plt.close(fig)
     # 3C: long - short ISI, response peak and latency, per electrode
     fig, axes = plt.subplots(1, 2, figsize=(6.5, 3.4), layout="constrained")
@@ -229,7 +228,7 @@ def main() -> None:
     print(sa[["roi", "n_subjects", "mean", "sem", "q"]].round(3).to_string())
     fig, ax = plt.subplots(figsize=(3.4, 3.4), layout="constrained")
     fc.roi_dot_panel(ax, {"Word event": sa}, "r (high-gamma peak vs latency)")
-    ax.set_ylim(-0.3, 0.3); ax.get_legend().remove()
+    ax.set_ylim(-0.3, 0.3); ax.legend(frameon=False, fontsize=7, loc="lower left")
     fig.savefig(join(out, "amp_latency.png"), dpi=200); plt.close(fig)
 
 

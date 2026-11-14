@@ -32,15 +32,15 @@ and ${\sim}$200 words per session, with task structure modelled as in \citet{DeH
 \textbf{Aim 1. What sets the size and timing of the response to a word?} On average, occipital high gamma rises at
 word onset ($d$ = 0.34) and alpha falls ($-0.10$), with smaller changes elsewhere (Fig.~\ref{fig:power}A). Split the
 response to each word event (word on vs.\ word off, Cohen's $d$ effect size) into subject, subregion, electrode,
-session, task, word and word-event components per region, with a random-intercept model. \emph{Preliminary (up to 5
+session, task, word and word-event components per region, with a random-intercept model. \emph{Preliminary (all subjects, 5 random
 electrodes per subject and ROI; Fig.~\ref{fig:power}B):} most variance is unique to an electrode during a word event
-(alpha 71--86\%, high gamma 56--89\%). Which word it is explains almost none ($<$1\%), and task structure little
+(alpha 71--86\%, high gamma 55--89\%). Which word it is explains almost none ($\le$1\%), and task structure little
 ($\le$3\%). The largest structured part is a word event's deviation shared by all of an ROI's electrodes (alpha
 11--25\%, high gamma 6--15\%). Fitted within single subjects (Fig.~\ref{fig:power}C), the split looks like the group's: the residual is 77\%
 in alpha and 64\% in high gamma, and what the group model assigns to subjects goes to electrodes and subregions.
 
-For the timing of the response, 38--70\% of the variance of latency is unique to an electrode during a word event and
-3--11\% is shared by an ROI, while 18--28\% is stable to the subject, subregion and electrode (Fig.~\ref{fig:timing}A). Word events whose occipital response is 111 ms
+For the timing of the response, 38--53\% of the variance of latency is unique to an electrode during a word event and
+2--9\% is shared by an ROI, while 26--43\% is stable to the subject, subregion and electrode and 4--25\% to an electrode in a session (Fig.~\ref{fig:timing}A). Word events whose occipital response is 111 ms
 later have a temporal response 40 ms later, limbic 26, parietal 22 and frontal 17 ms later, and no later
 hippocampal response (Fig.~\ref{fig:timing}B, D): only 15--36\% of a word's delay in visual cortex is passed on, so
 the occipital-to-frontal order of the average response is not a sequence that each word follows. Within occipital cortex, the fusiform gyrus responds later and less strongly than lateral
@@ -48,7 +48,7 @@ occipital cortex and lingual gyrus (Fig.~\ref{fig:timing}C). Size and timing are
 word event's high-gamma response barely relates to its latency ($r$ = 0.01--0.04, $\le$0.13 after correcting for
 noise; Fig.~\ref{fig:timing}E).
 
-Stable differences between sites are large only in occipital high gamma (subject 8\%, electrode 22\%; subregion
+Stable differences between sites are large only in occipital high gamma (subject 8\%, electrode 21\%; subregion
 about 3\%), and there they replicate between session halves (Fig.~\ref{fig:stable}A; median $r$ = 0.90, 0.20--0.59
 elsewhere). Outside occipital regions 68--76\% of electrodes show neither an alpha nor a high-gamma response, against
 35\% in occipital regions; across electrodes the bands share the size of the response more than its direction
@@ -91,19 +91,19 @@ visual cortex is set largely anew rather than inherited from it.
 
 \begin{figure}[!h]\centering
 \panel{A}{}\includegraphics[width=0.6\linewidth]{img/figS1_power_subjects.png}\par\medskip
-\panel{B}{Prelim: all subjects, $\le$5 random electrodes per subject $\times$ ROI; occipital row: 52 random subjects, with subregion}\includegraphics[width=0.8\linewidth]{img/variance_components_power.png}\par\medskip
+\panel{B}{Prelim: all subjects, 5 random electrodes per subject $\times$ ROI}\includegraphics[width=0.8\linewidth]{img/variance_components_power.png}\par\medskip
 \panel{C}{Prelim: occipital, the 99 subjects with $\ge$5 electrodes and $\ge$2 sessions, all their electrodes}\includegraphics[width=0.8\linewidth]{img/fig1c_single_subject.png}
-\caption{(A) Power change at word onset (Cohen's $d$, word on vs.\ off, across subjects). (B) Variance components of the response to each word event, one mixed model per ROI; occipital: with anatomical subregion as a component (52 subjects). (C) Occipital shares from the group model (B's occipital row), averaged over single-subject fits (the same model without subject terms) and for the subject with the most electrodes $\times$ sessions.}
+\caption{(A) Power change at word onset (Cohen's $d$, word on vs.\ off, across subjects). (B) Variance components of the response to each word event, one mixed model per ROI, with anatomical subregion as a component where an ROI has $\ge$2. (C) Occipital shares from the group model (B's occipital row), averaged over single-subject fits (the same model without subject terms) and for the subject with the most electrodes $\times$ sessions.}
 \label{fig:power}
 \end{figure}
 
 \begin{figure}[!h]\centering
-\panel{A}{Prelim: all subjects, $\le$5 random responsive electrodes per subject $\times$ ROI, single-event cross-correlation latency; frontal, temporal, parietal, occipital rows: 24--52 random subjects, with subregion}\includegraphics[width=0.36\linewidth]{img/variance_components_latency.png}\par\medskip
+\panel{A}{Prelim: all subjects, 5 random responsive electrodes per subject $\times$ ROI}\includegraphics[width=0.36\linewidth]{img/variance_components_latency.png}\par\medskip
 \begin{minipage}[b]{0.62\linewidth}\centering\panel{B}{}\includegraphics[width=\linewidth]{img/fig2b_propagation_waveforms.png}\end{minipage}\hfill
 \begin{minipage}[b]{0.36\linewidth}\centering\panel{C}{}\includegraphics[width=\linewidth]{img/fig2c_subregion_waveforms.png}\end{minipage}\par\medskip
 \begin{minipage}[b]{0.45\linewidth}\centering\panel{D}{}\includegraphics[width=0.85\linewidth]{img/fig2c_propagation_shift.png}\end{minipage}\hfill
 \begin{minipage}[b]{0.45\linewidth}\centering\panel{E}{}\includegraphics[width=0.75\linewidth]{img/fig4d_amp_latency.png}\end{minipage}
-\caption{(A) Variance components of high-gamma latency per word event (cross-correlation with the electrode's average response, responsive electrodes); frontal, temporal, parietal and occipital: with anatomical subregion (regions with $\ge$30 subjects). (B) High gamma per region for word events whose occipital latency (cross-correlation with each electrode's average response) is early vs.\ late (session median split); mean $\pm$ SEM across subjects. (C) Occipital high gamma per anatomical subregion (the three with the most subjects, responsive electrodes); legend: subjects. (D) Lag of each region's late-word curve behind its early-word curve (cross-correlation per electrode); dashed: occipital itself, the delay set by the split ($\pm$ SEM); subjects with responsive electrodes in both occipital regions and the region (41--112). (E) High-gamma peak vs.\ latency (cross-correlation) across word events at the same electrode (serial-position and list means removed). D, E: mean across subjects $\pm$ SEM per region, stars: FDR.}
+\caption{(A) Variance components of high-gamma latency per word event (cross-correlation with the electrode's average response, responsive electrodes), with anatomical subregion as a component where an ROI has $\ge$2. (B) High gamma per region for word events whose occipital latency (cross-correlation with each electrode's average response) is early vs.\ late (session median split); mean $\pm$ SEM across subjects. (C) Occipital high gamma per anatomical subregion (the three with the most subjects, responsive electrodes); legend: subjects. (D) Lag of each region's late-word curve behind its early-word curve (cross-correlation per electrode); dashed: occipital itself, the delay set by the split ($\pm$ SEM); subjects with responsive electrodes in both occipital regions and the region (41--112). (E) High-gamma peak vs.\ latency (cross-correlation) across word events at the same electrode (serial-position and list means removed). D, E: mean across subjects $\pm$ SEM per region, stars: FDR.}
 \label{fig:timing}
 \end{figure}
 
