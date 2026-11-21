@@ -1,12 +1,11 @@
 """fc_comparison_functions.py — per-session FC compute + cross-metric aggregation.
 
-Centerpiece of the project. Loads per-session EEG + pairs, runs each FC
-metric, regionalizes to (region × region) matrices, aggregates across
-subjects, computes hub scores and bootstrap-evaluated subsample similarity.
+Loads per-session EEG + pairs, runs each FC metric, regionalizes to
+(region × region) matrices, aggregates across subjects, computes hub scores
+and bootstrap-evaluated subsample similarity.
 
-Dominated by pandas + mne_connectivity + matplotlib pyplot method chains
-— all weakly stubbed. File-level narrowing for the library-stub-noise
-rules; the other strict-mode rules stay on.
+Third-party stubs are weak, so the unknown-type pyright rules are narrowed to
+warnings; the other strict-mode rules stay on.
 """
 # pyright: reportUnknownMemberType=warning, reportUnknownArgumentType=warning, reportUnknownVariableType=warning, reportAttributeAccessIssue=warning, reportConstantRedefinition=warning
 from __future__ import annotations
@@ -54,12 +53,12 @@ def load_pickle(path: str) -> Any:
     """pickle.load. A session result's `reg_full` is refreshed from the session's
     CURRENT pairs table, so atlas fixes apply without recomputing."""
     with open(path, "rb") as f:
-        d = pickle.load(f)
-    if isinstance(d, dict) and "sid" in d and "reg_full" in d:
-        new = session_regions(*map(str, d["sid"][:3]))
-        if new is not None and len(new) == len(d["reg_full"]):
-            d["reg_full"] = new
-    return d
+        result = pickle.load(f)
+    if isinstance(result, dict) and "sid" in result and "reg_full" in result:
+        regions = session_regions(*map(str, result["sid"][:3]))
+        if regions is not None and len(regions) == len(result["reg_full"]):
+            result["reg_full"] = regions
+    return result
 
 
 @functools.lru_cache(maxsize=None)
@@ -73,21 +72,22 @@ def session_regions(sub: str, exp: str, sess: str) -> NDArrayAny | None:
     pairs = helper.get_pairs(pd.Series({"sub": sub, "exp": exp, "sess": int(sess)}))
     if pairs is None:
         return None
-    todo = (pairs["type_1"].isin(["D", "UD"]).to_numpy()
-            & (helper.get_atlas_labels_by_type(pairs)["atlas"].astype(str) == "no atlas").to_numpy())
+    unlabelled_depth = (pairs["type_1"].isin(["D", "UD"]).to_numpy()
+                        & (helper.get_atlas_labels_by_type(pairs)["atlas"].astype(str) == "no atlas").to_numpy())
     rl.DB = join(root_dir, IMAGING_LABEL_DB)
-    pw, cw = rl.load_pair_wb(sub), rl.load_contact_wb(sub)
-    wb = np.array([rl.recover_pair_label(lab, pw, cw)[0] if t else None
-                   for lab, t in zip(pairs["label"], todo)], dtype=object)
-    found = wb != None   # noqa: E711
+    pair_wb, contact_wb = rl.load_pair_wb(sub), rl.load_contact_wb(sub)
+    recovered = np.array([rl.recover_pair_label(lab, pair_wb, contact_wb)[0] if needs_label else None
+                          for lab, needs_label in zip(pairs["label"], unlabelled_depth)], dtype=object)
+    found = recovered != None   # noqa: E711
     if found.any():
         pairs = pairs.copy()
-        pairs.loc[found, "wb.region"] = wb[found]
-    fine = np.array(helper.regionalize_electrodes_by_type(pairs), dtype=object)   # writable copy
-    rest = todo & ~found
-    if rest.any():
-        fine[rest] = mni_neighbour_labels(sub, pairs.loc[rest, ["mni.x", "mni.y", "mni.z"]].to_numpy(float))
-    return fine
+        pairs.loc[found, "wb.region"] = recovered[found]
+    regions = np.array(helper.regionalize_electrodes_by_type(pairs), dtype=object)   # writable copy
+    still_unlabelled = unlabelled_depth & ~found
+    if still_unlabelled.any():
+        regions[still_unlabelled] = mni_neighbour_labels(
+            sub, pairs.loc[still_unlabelled, ["mni.x", "mni.y", "mni.z"]].to_numpy(float))
+    return regions
 
 
 IMAGING_LABEL_DB = "imaging_label_recovery"   # copied from /Volumes/penn/cml_imaging_label_recovery_2026-10-21
@@ -101,18 +101,19 @@ def _depth_label_reference() -> tuple[Any, NDArrayAny, NDArrayAny]:
     from glob import glob
     from scipy.spatial import cKDTree
     rows = []
-    for f in glob(join(root_dir, "electrode_information", "pairs", "*_pairs.json")):
-        sub = os.path.basename(f).rsplit("_", 3)[0]
-        p = pd.read_json(f).fillna("nan")
-        ok = (p["type_1"].isin(["D", "UD"]).to_numpy()
-              & helper.get_atlas_labels_by_type(p)["atlas"].isin(["stein.region", "das.region", "wb.region"]).to_numpy())
-        fine = np.asarray(helper.regionalize_electrodes_by_type(p), dtype=object)
-        for i in np.flatnonzero(ok):
-            if isinstance(fine[i], str):
-                rows.append((sub, p["label"].iloc[i], fine[i], *p[["mni.x", "mni.y", "mni.z"]].iloc[i]))
-    d = pd.DataFrame(rows, columns=["sub", "label", "region", "x", "y", "z"]).drop_duplicates(["sub", "label"])
-    d = d[np.isfinite(d[["x", "y", "z"]].astype(float)).all(axis=1)]
-    return cKDTree(d[["x", "y", "z"]].to_numpy(float)), d["region"].to_numpy(object), d["sub"].to_numpy(object)
+    for path in glob(join(root_dir, "electrode_information", "pairs", "*_pairs.json")):
+        sub = os.path.basename(path).rsplit("_", 3)[0]
+        pairs = pd.read_json(path).fillna("nan")
+        labelled_depth = (pairs["type_1"].isin(["D", "UD"]).to_numpy()
+                          & helper.get_atlas_labels_by_type(pairs)["atlas"].isin(["stein.region", "das.region", "wb.region"]).to_numpy())
+        regions = np.asarray(helper.regionalize_electrodes_by_type(pairs), dtype=object)
+        for i in np.flatnonzero(labelled_depth):
+            if isinstance(regions[i], str):
+                rows.append((sub, pairs["label"].iloc[i], regions[i], *pairs[["mni.x", "mni.y", "mni.z"]].iloc[i]))
+    reference = pd.DataFrame(rows, columns=["sub", "label", "region", "x", "y", "z"]).drop_duplicates(["sub", "label"])
+    reference = reference[np.isfinite(reference[["x", "y", "z"]].astype(float)).all(axis=1)]
+    return (cKDTree(reference[["x", "y", "z"]].to_numpy(float)), reference["region"].to_numpy(object),
+            reference["sub"].to_numpy(object))
 
 
 def mni_neighbour_labels(sub: str, xyz: NDArrayAny) -> NDArrayAny:
@@ -123,10 +124,10 @@ def mni_neighbour_labels(sub: str, xyz: NDArrayAny) -> NDArrayAny:
     from collections import Counter
     tree, region, subs = _depth_label_reference()
     out = np.full(len(xyz), np.nan, dtype=object)
-    for i, nb in enumerate(tree.query_ball_point(np.nan_to_num(xyz, nan=1e6), MNI_LABEL_RADIUS_MM)):
-        labs = [region[j] for j in nb if subs[j] != sub]
-        if len(labs) >= MNI_LABEL_MIN_NEIGHBOURS:
-            out[i] = Counter(labs).most_common(1)[0][0]
+    for i, neighbours in enumerate(tree.query_ball_point(np.nan_to_num(xyz, nan=1e6), MNI_LABEL_RADIUS_MM)):
+        other_subject_labels = [region[j] for j in neighbours if subs[j] != sub]
+        if len(other_subject_labels) >= MNI_LABEL_MIN_NEIGHBOURS:
+            out[i] = Counter(other_subject_labels).most_common(1)[0][0]
     return out
 
 
@@ -217,9 +218,9 @@ def band_analytic(x: NDArrayAny, sf: float, fmin: float, fmax: float) -> NDArray
     import mne
     from scipy.signal import hilbert
     from mne.filter import next_fast_len
-    filt = mne.filter.filter_data(np.asarray(x, float), sf, fmin, fmax, verbose=False)
-    n = filt.shape[-1]
-    return hilbert(filt, N=next_fast_len(n), axis=-1)[..., :n]
+    filtered = mne.filter.filter_data(np.asarray(x, float), sf, fmin, fmax, verbose=False)
+    n = filtered.shape[-1]
+    return hilbert(filtered, N=next_fast_len(n), axis=-1)[..., :n]
 
 
 def compute_aec_c(analytic: NDArrayAny) -> NDArrayAny:
@@ -243,11 +244,11 @@ def window_fc(x: NDArrayAny, sf: float, t0: float, win: tuple[float, float], m: 
     """Metric `m` over window `win` (ms) of `x`, whose first sample is at t0 ms.
     aec_c: from the whole-clip `analytic`; phase metrics: MNE multitaper on the
     window, bandwidth scaled so the time-bandwidth product equals that of an nw_ms window."""
-    i = int(round((win[0] - t0) * sf / 1000.0))
-    n = int(round((win[1] - win[0]) * sf / 1000.0))
+    start = int(round((win[0] - t0) * sf / 1000.0))
+    n_samples = int(round((win[1] - win[0]) * sf / 1000.0))
     if m == "aec_c":
-        return compute_aec_c(analytic[..., i:i + n])
-    return compute_spectral_fc(x[..., i:i + n], sf, method=m, fmin=fmin, fmax=fmax,
+        return compute_aec_c(analytic[..., start:start + n_samples])
+    return compute_spectral_fc(x[..., start:start + n_samples], sf, method=m, fmin=fmin, fmax=fmax,
                                bandwidth=MT_BANDWIDTH * nw_ms / (win[1] - win[0]))
 
 FC_MODES = ("multitaper", "hilbert")   # hilbert: power only (longetal)
@@ -355,45 +356,44 @@ def compute_prepost_separate(
     pre_events = events[~full_mask].copy(); pre_events.attrs = dict(events.attrs)
     pre_events.attrs["mask"] = full_mask[~full_mask]
 
-    post_off = np.asarray(post_events["eegoffset"])
-    pre_off = np.asarray(pre_events["eegoffset"])
-    if post_off.shape != pre_off.shape or not np.array_equal(post_off, pre_off):
+    post_onsets = np.asarray(post_events["eegoffset"])
+    pre_onsets = np.asarray(pre_events["eegoffset"])
+    if post_onsets.shape != pre_onsets.shape or not np.array_equal(post_onsets, pre_onsets):
         raise ValueError(
             f"{beh}: PRE and POST events must share onsets row-for-row (PRE_* are "
-            f"copies of {spec['post_type']}); {post_off.shape[0]} post vs "
-            f"{pre_off.shape[0]} pre, content mismatch — malformed event file."
+            f"copies of {spec['post_type']}); {post_onsets.shape[0]} post vs "
+            f"{pre_onsets.shape[0]} pre, content mismatch — malformed event file."
         )
 
-    post_load = (post_win[0], max(post_win[1], EPOCHS[-1][1]))
-    post_eeg, _ = load_fn(dfrow, post_events, post_load, real_data_buffer_ms, simulation_tag)
+    post_load_win = (post_win[0], max(post_win[1], EPOCHS[-1][1]))
+    post_eeg, _ = load_fn(dfrow, post_events, post_load_win, real_data_buffer_ms, simulation_tag)
     pre_eeg, _ = load_fn(dfrow, pre_events, pre_win, real_data_buffer_ms, simulation_tag)
-    # coverage guard: the loaded clip must span its analysis window (the buffer
-    # extends beyond it, so a short axis means boundary clipping).
-    _assert_time_axis_covers(np.asarray(post_eeg.time), post_load[0], post_load[1], f"{beh} post")
+    # the buffer extends past the window, so a short axis means boundary clipping
+    _assert_time_axis_covers(np.asarray(post_eeg.time), post_load_win[0], post_load_win[1], f"{beh} post")
     _assert_time_axis_covers(np.asarray(pre_eeg.time), pre_win[0], pre_win[1], f"{beh} pre")
     sf = float(post_eeg.samplerate)
     post = np.asarray(post_eeg.data, float); pre = np.asarray(pre_eeg.data, float)
-    if SUBTRACT_ERP:   # subtract the evoked response (across-trial mean) per window
+    if SUBTRACT_ERP:
         post -= post.mean(axis=0, keepdims=True)
         pre -= pre.mean(axis=0, keepdims=True)
     arms = {"post": (post, float(post_eeg.time[0])), "pre": (pre, float(pre_eeg.time[0]))}
     nw_ms = post_win[1] - post_win[0]
 
-    out_m: dict[str, dict[str, NDArrayAny]] = {}
-    for m in metric_list:
+    out: dict[str, dict[str, NDArrayAny]] = {}
+    for metric in metric_list:
         # AEC-c on bands.gamma (70-110 Hz, as riley-thesis): the envelope must stay
         # below the band's lower edge (Bedrosian), which a 70-150 band violates.
-        an = ({k: band_analytic(x, sf, *bands["gamma"]) for k, (x, _) in arms.items()}
-              if m == "aec_c" else {})
-        def fc_(arm: str, win: tuple[float, float]) -> NDArrayAny:
+        analytic = ({arm: band_analytic(x, sf, *bands["gamma"]) for arm, (x, _) in arms.items()}
+                    if metric == "aec_c" else {})
+        def masked_fc(arm: str, win: tuple[float, float]) -> NDArrayAny:
             x, t0 = arms[arm]
-            return apply_overlap_mask(window_fc(x, sf, t0, win, m, fmin, fmax, nw_ms,
-                                                an.get(arm)), overlap_mask)
-        C_post, C_pre = fc_("post", post_win), fc_("pre", pre_win)
-        out_m[m] = {"baseline": C_pre, "succ": C_post, "diff": C_post - C_pre}
-        base = np.nanmean([fc_("pre", w) for w in EPOCH_BASELINE], axis=0)
-        out_m[m]["epochs"] = np.stack([fc_("post", w) - base for w in EPOCHS])
-    return out_m
+            return apply_overlap_mask(window_fc(x, sf, t0, win, metric, fmin, fmax, nw_ms,
+                                                analytic.get(arm)), overlap_mask)
+        C_post, C_pre = masked_fc("post", post_win), masked_fc("pre", pre_win)
+        out[metric] = {"baseline": C_pre, "succ": C_post, "diff": C_post - C_pre}
+        epoch_baseline = np.nanmean([masked_fc("pre", w) for w in EPOCH_BASELINE], axis=0)
+        out[metric]["epochs"] = np.stack([masked_fc("post", w) - epoch_baseline for w in EPOCHS])
+    return out
 
 
 def compute_session_fc(
@@ -401,11 +401,11 @@ def compute_session_fc(
     overlap_mask: NDArrayAny | None = None, simulation_tag: str | None = None,
 ) -> dict[str, dict[str, NDArrayAny]] | None:
     """{metric: {baseline, succ, diff}} for one session, or None without events."""
-    ev = load_events(dfrow, beh)
-    if ev is None:
+    events = load_events(dfrow, beh)
+    if events is None:
         return None
     fmin, fmax = bands[band]
-    return compute_prepost_separate(dfrow, beh, ev, metrics, fmin, fmax, overlap_mask,
+    return compute_prepost_separate(dfrow, beh, events, metrics, fmin, fmax, overlap_mask,
                                     REAL_DATA_BUFFER_MS, simulation_tag=simulation_tag)
 
 
@@ -421,19 +421,8 @@ def stars(q):
 # =============================================================================
 # ROI analysis layer
 # =============================================================================
-# Shared machinery for the ROI-level build scripts:
-#
-#   build_roi_power.py       local spectral power per Burke ROI
-#   build_roi_synchrony.py   phase FC (compute) + collapsed synchrony per ROI
-#
-# Everything those scripts have in common lives here -- the behavior registry,
-# the Burke ROI vocabulary, pair geometry,
-# the per-ROI test, the session dispatcher and the ROI figure --
-# so each script contains only what is unique to it and none of them has to
-# import a plotting script to get a constant.
-#
-# Nothing in this section imports the build or plot scripts; the dependency
-# runs one way (scripts -> here).
+# Shared by the ROI build scripts (build_roi_power.py, build_roi_synchrony.py).
+# Nothing here imports the build or plot scripts; the dependency runs one way.
 
 # --- contrast registry -------------------------------------------------------
 # `lo` is the reference arm, `hi` the active one, diff = hi - lo; the names are
@@ -462,9 +451,7 @@ LOBES: list[str] = ["frontal", "temporal", "parietal", "occipital", "limbic",
                     "hippocampus"]
 ROI_ORDER: list[str] = [f"{h}-{lobe}" for h in ("L", "R", "B") for lobe in LOBES]
 
-# Okabe-Ito, one hue per Burke lobe (CVD-safe). Hemisphere is NOT color-coded:
-# it is carried by x position (Left block / Right block), so identity never
-# rests on color alone.
+# Okabe-Ito, one hue per Burke lobe (CVD-safe); hemisphere is carried by x position.
 LOBE_COLORS: dict[str, str] = {
     "frontal": "#0072B2",
     "temporal": "#E69F00",
@@ -483,12 +470,11 @@ def present_rois(tbl: pd.DataFrame) -> list[str]:
 def roi_color(roi: str) -> Any:
     """'<H>-<lobe>' -> its lobe colour; right hemisphere a lighter shade of it."""
     import matplotlib.colors as mcolors
-    c = np.array(mcolors.to_rgb(LOBE_COLORS.get(roi.split("-", 1)[1], "0.5")))
-    return tuple(c + 0.4 * (1 - c)) if roi.startswith("R") else tuple(c)
+    rgb = np.array(mcolors.to_rgb(LOBE_COLORS.get(roi.split("-", 1)[1], "0.5")))
+    return tuple(rgb + 0.4 * (1 - rgb)) if roi.startswith("R") else tuple(rgb)
 
-# Minimum subjects contributing an ROI before it is tested / drawn.
-# Minimum subjects per test; a subject
-# needs only 1 electrode in a region. Simulations (20 subjects) use 5 (resolve_roots).
+# Minimum subjects per test / drawn ROI; a subject needs only 1 electrode in a
+# region. Simulations (20 subjects) use 5 (resolve_roots).
 MIN_SUBJECTS_ROI: int = 30     # region-level tests (ROIs, subregions, bins)
 MIN_SUBJECTS_PAIR: int = 100   # region pairs (epoch network edges and hubs), as riley-thesis
 
@@ -497,8 +483,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 
 def load_burke_maps() -> dict[str, str]:
     """{region label: burke lobe} from region_to_burke_lobe.csv."""
-    lobe = pd.read_csv(join(_HERE, "region_to_burke_lobe.csv"))
-    return lobe.set_index("region")["burke_lobe"].to_dict()
+    lobe_table = pd.read_csv(join(_HERE, "region_to_burke_lobe.csv"))
+    return lobe_table.set_index("region")["burke_lobe"].to_dict()
 
 
 def roi_of_reg_full(reg_full: Any, lobe_of: dict[str, str], pool: bool = True) -> NDArrayAny:
@@ -511,11 +497,11 @@ def roi_of_reg_full(reg_full: Any, lobe_of: dict[str, str], pool: bool = True) -
     policy in pair_xyz_lead -- labels and geometry are separate.
     """
     out: list[str | None] = []
-    for v in np.asarray(reg_full, dtype=object):
-        if not isinstance(v, str) or " " not in v:
+    for label in np.asarray(reg_full, dtype=object):
+        if not isinstance(label, str) or " " not in label:
             out.append(None)
             continue
-        hemi, region = v.split(" ", 1)
+        hemi, region = label.split(" ", 1)
         lobe = lobe_of.get(region, "")
         if LONGETAL and (lobe in LONGETAL.get("exclude_lobes", ())            # Long et al.: no limbic/sublobar
                          or region in LONGETAL.get("exclude_regions", ())):
@@ -533,9 +519,9 @@ def pair_xyz_lead(dfrow: pd.Series) -> tuple[NDArrayAny, NDArrayAny]:
     (MNI152NLin6ASym), so every pair centroid -- depth, grid or strip -- lives
     in the same frame and any two are directly comparable.
     """
-    p0 = helper.get_pairs(dfrow)
-    xyz = p0[["mni.x", "mni.y", "mni.z"]].apply(pd.to_numeric, errors="coerce").to_numpy(float)
-    lead = p0["label"].str.extract(r"^([A-Za-z]+)")[0].to_numpy()
+    pairs = helper.get_pairs(dfrow)
+    xyz = pairs[["mni.x", "mni.y", "mni.z"]].apply(pd.to_numeric, errors="coerce").to_numpy(float)
+    lead = pairs["label"].str.extract(r"^([A-Za-z]+)")[0].to_numpy()
     return xyz, lead
 
 
@@ -548,8 +534,8 @@ def electrode_sync(M: Any) -> NDArrayAny:
     """Per-electrode synchrony: mean over all its partners (as Rao et al. 2025);
     NaN entries (diagonal, contact-sharing pairs) are skipped."""
     M = np.asarray(M, float)
-    n = np.isfinite(M).sum(axis=1)
-    return np.where(n > 0, np.nansum(M, axis=1) / np.maximum(n, 1), np.nan)
+    n_partners = np.isfinite(M).sum(axis=1)
+    return np.where(n_partners > 0, np.nansum(M, axis=1) / np.maximum(n_partners, 1), np.nan)
 
 
 # --- per-ROI statistics ------------------------------------------------------
@@ -582,32 +568,31 @@ def roi_stats(
     """
     rows: list[dict[str, Any]] = []
     tested: list[str] = []
-    pv: list[float] = []
+    pvals: list[float] = []
     for roi in roi_order or present_rois(tbl):
-        v = tbl.loc[tbl["roi"] == roi, measure].dropna().to_numpy(float)
+        values = tbl.loc[tbl["roi"] == roi, measure].dropna().to_numpy(float)
         t = p = np.nan
-        # t is undefined at zero variance (every subject identical) -- rare, but
-        # it would come back as a nan + RuntimeWarning rather than an error
-        if v.size >= (min_subjects or MIN_SUBJECTS_ROI) and np.std(v, ddof=1) > 0:
-            res = ttest_1samp(v, 0.0)
+        # t is undefined at zero variance (would return nan + RuntimeWarning)
+        if values.size >= (min_subjects or MIN_SUBJECTS_ROI) and np.std(values, ddof=1) > 0:
+            res = ttest_1samp(values, 0.0)
             t, p = float(res.statistic), float(res.pvalue)
             tested.append(roi)
-            pv.append(p)
-        mean, half = mean_ci(v)
+            pvals.append(p)
+        mean, ci_half = mean_ci(values)
         rows.append({
-            "roi": roi, "n_subjects": int(v.size),
+            "roi": roi, "n_subjects": int(values.size),
             "mean": mean,
-            "sem": (float(np.std(v, ddof=1) / np.sqrt(v.size))
-                    if v.size > 1 else np.nan),
-            "ci95_lo": mean - half, "ci95_hi": mean + half,
-            "median": float(np.median(v)) if v.size else np.nan,
-            "q25": float(np.percentile(v, 25)) if v.size else np.nan,
-            "q75": float(np.percentile(v, 75)) if v.size else np.nan,
+            "sem": (float(np.std(values, ddof=1) / np.sqrt(values.size))
+                    if values.size > 1 else np.nan),
+            "ci95_lo": mean - ci_half, "ci95_hi": mean + ci_half,
+            "median": float(np.median(values)) if values.size else np.nan,
+            "q25": float(np.percentile(values, 25)) if values.size else np.nan,
+            "q75": float(np.percentile(values, 75)) if values.size else np.nan,
             "t": t, "p": p, "q": np.nan,
         })
     out = pd.DataFrame(rows).set_index("roi")
-    if pv:
-        q = multipletests(np.asarray(pv), method="fdr_bh")[1]
+    if pvals:
+        q = multipletests(np.asarray(pvals), method="fdr_bh")[1]
         out.loc[tested, "q"] = q
     return out.reset_index()
 
@@ -649,8 +634,8 @@ def _roi_axis_furniture(
                         xytext=(0, -22), textcoords="offset points", ha="center", va="top",
                         fontsize=12, fontweight="bold", color=LOBE_COLORS.get(lobe, "k"))
     ax.set_axisbelow(True)
-    for sp in ("top", "right"):
-        ax.spines[sp].set_visible(False)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
 
 
 def box_dots(ax: Any, data: Sequence[Any], positions: Sequence[float], colors: Sequence[Any],
@@ -658,20 +643,20 @@ def box_dots(ax: Any, data: Sequence[Any], positions: Sequence[float], colors: S
     """Median/IQR boxes with every value as a jittered dot (roi_panel's style); dot size and
     alpha shrink as n grows. Empty groups are skipped."""
     rng = np.random.default_rng(seed)
-    keep = [i for i, v in enumerate(data) if len(v)]
-    if not keep:
+    nonempty = [i for i, v in enumerate(data) if len(v)]
+    if not nonempty:
         return
-    bp = ax.boxplot([np.asarray(data[i], float) for i in keep], positions=[positions[i] for i in keep],
+    bp = ax.boxplot([np.asarray(data[i], float) for i in nonempty], positions=[positions[i] for i in nonempty],
                     widths=width, whis=whis, showfliers=False, patch_artist=True,
                     medianprops=dict(color="0.15", lw=1.6), whiskerprops=dict(color="0.45", lw=1.0),
                     capprops=dict(color="0.45", lw=1.0))
-    for patch, i in zip(bp["boxes"], keep):
+    for patch, i in zip(bp["boxes"], nonempty):
         patch.set(facecolor=colors[i], alpha=0.35, edgecolor=colors[i], linewidth=1.2)
-    for i in keep:
-        v = np.asarray(data[i], float)
-        s, a = (9, 0.6) if v.size <= 60 else (4, 0.3) if v.size <= 600 else (1.5, 0.12)
-        ax.scatter(positions[i] + rng.uniform(-width / 3, width / 3, v.size), v, s=s, color=colors[i],
-                   alpha=a, linewidths=0, zorder=3)
+    for i in nonempty:
+        values = np.asarray(data[i], float)
+        dot_size, dot_alpha = (9, 0.6) if values.size <= 60 else (4, 0.3) if values.size <= 600 else (1.5, 0.12)
+        ax.scatter(positions[i] + rng.uniform(-width / 3, width / 3, values.size), values, s=dot_size,
+                   color=colors[i], alpha=dot_alpha, linewidths=0, zorder=3)
 
 
 def roi_panel(
@@ -708,16 +693,15 @@ def roi_panel(
             patch.set_edgecolor(colors[i])
             patch.set_linewidth(1.4)
 
-    # subject points first, so the estimate sits on top of them. Size and alpha
-    # scale down as n grows: readable as individual subjects on a small subset,
-    # a density cloud at the full 120-290 subjects per ROI.
+    # subject points first, so the estimate sits on top; smaller and fainter at
+    # the full 120-290 subjects per ROI.
     n_max = max((v.size for v in data), default=0)
-    s_dot, a_dot = (9, 0.55) if n_max <= 40 else (4, 0.25)
-    for i, v in enumerate(data):
-        if v.size == 0:
+    dot_size, dot_alpha = (9, 0.55) if n_max <= 40 else (4, 0.25)
+    for i, values in enumerate(data):
+        if values.size == 0:
             continue
-        x = pos[i] + rng.uniform(-0.16, 0.16, v.size)
-        ax.scatter(x, v, s=s_dot, color=colors[i], alpha=a_dot, linewidths=0,
+        jittered_x = pos[i] + rng.uniform(-0.16, 0.16, values.size)
+        ax.scatter(jittered_x, values, s=dot_size, color=colors[i], alpha=dot_alpha, linewidths=0,
                    zorder=3)
 
     for i in drawn:
@@ -725,10 +709,11 @@ def roi_panel(
                    facecolor="white", edgecolor="0.15", linewidths=1.2, zorder=4)
 
     _roi_axis_furniture(ax, pos, roi_order, lobes)
-    lo, top = ax.get_ylim()
+    bottom, top = ax.get_ylim()
     if ylim:
-        lo, top = max(lo, ylim[0] if ylim[0] is not None else lo), min(top, ylim[1] if ylim[1] is not None else top)
-        ax.set_ylim(lo, top)
+        bottom, top = (max(bottom, ylim[0] if ylim[0] is not None else bottom),
+                       min(top, ylim[1] if ylim[1] is not None else top))
+        ax.set_ylim(bottom, top)
     _annotate_counts_and_stars(
         ax, pos, roi_order,
         n=[v.size for v in data],
@@ -745,17 +730,17 @@ def roi_bar_panel(
     lobe; FDR stars in a fixed row along the top, n along the bottom."""
     roi_order = roi_order or present_rois(stats)
     pos = _roi_positions(roi_order, lobes)
-    s = stats.set_index("roi")
+    stats_by_roi = stats.set_index("roi")
     for i, roi in enumerate(roi_order):
-        if roi not in s.index or s.loc[roi, "n_subjects"] < MIN_SUBJECTS_ROI:
+        if roi not in stats_by_roi.index or stats_by_roi.loc[roi, "n_subjects"] < MIN_SUBJECTS_ROI:
             continue
-        r = s.loc[roi]
-        ax.bar(pos[i], r["mean"], yerr=r["sem"], width=0.7, capsize=3, edgecolor="0.15",
+        row = stats_by_roi.loc[roi]
+        ax.bar(pos[i], row["mean"], yerr=row["sem"], width=0.7, capsize=3, edgecolor="0.15",
                ecolor="0.2", color=roi_color(roi), zorder=3)
-        ax.annotate(f"{int(r['n_subjects'])}", (pos[i], 0.015), xycoords=("data", "axes fraction"),
+        ax.annotate(f"{int(row['n_subjects'])}", (pos[i], 0.015), xycoords=("data", "axes fraction"),
                     ha="center", va="bottom", fontsize=9, color="0.45")
-        if stars(float(r["q"])):
-            ax.annotate(stars(float(r["q"])), (pos[i], 0.93), xycoords=("data", "axes fraction"),
+        if stars(float(row["q"])):
+            ax.annotate(stars(float(row["q"])), (pos[i], 0.93), xycoords=("data", "axes fraction"),
                         ha="center", va="bottom", fontsize=11, fontweight="bold")
     lo, hi = np.nanmin(stats["mean"] - stats["sem"]), np.nanmax(stats["mean"] + stats["sem"])
     pad = 0.12 * (max(hi, 0) - min(lo, 0))
@@ -767,15 +752,15 @@ def roi_bar_panel(
 def roi_dot_panel(ax: Any, stats: dict[str, pd.DataFrame], ylabel: str, lobes: Sequence[str] = tuple(LOBES)) -> None:
     """Several measures on one axis: one x category per measure ({label: roi_stats table}), in each a
     cluster of lobe dots, across-subject mean +/- SEM, FDR stars above."""
-    for k, (lab, st) in enumerate(stats.items()):
-        s = st.set_index("roi")
-        for jj, lb in enumerate(lobes):
-            if f"B-{lb}" not in s.index:
+    for k, roi_table in enumerate(stats.values()):
+        stats_by_roi = roi_table.set_index("roi")
+        for j, lobe in enumerate(lobes):
+            if f"B-{lobe}" not in stats_by_roi.index:
                 continue
-            r = s.loc[f"B-{lb}"]; x = k + (jj - (len(lobes) - 1) / 2) * 0.11
-            ax.errorbar(x, r["mean"], yerr=r["sem"], fmt="o", ms=5, color=LOBE_COLORS[lb], lw=1.2,
-                        label=lb.capitalize() if k == 0 else None)
-            ax.annotate(stars(float(r["q"])), (x, r["mean"] + r["sem"]), textcoords="offset points", xytext=(0, 2),
+            row = stats_by_roi.loc[f"B-{lobe}"]; x = k + (j - (len(lobes) - 1) / 2) * 0.11
+            ax.errorbar(x, row["mean"], yerr=row["sem"], fmt="o", ms=5, color=LOBE_COLORS[lobe], lw=1.2,
+                        label=lobe.capitalize() if k == 0 else None)
+            ax.annotate(stars(float(row["q"])), (x, row["mean"] + row["sem"]), textcoords="offset points", xytext=(0, 2),
                         ha="center", va="bottom", fontsize=7)
     ax.axhline(0, color="0.5", lw=0.8); ax.set_xticks(range(len(stats)), list(stats))
     ax.set_ylabel(ylabel); ax.spines[["top", "right"]].set_visible(False)
@@ -787,17 +772,17 @@ def _annotate_counts_and_stars(
     n: Sequence[int], tops: Sequence[float], stats: pd.DataFrame | None,
 ) -> None:
     """n inside the axes at the bottom, FDR stars just past each ROI's estimate."""
-    s = None if stats is None else stats.set_index("roi")
+    stats_by_roi = None if stats is None else stats.set_index("roi")
     for i, roi in enumerate(roi_order):
         if not n[i]:
             continue
         ax.annotate(f"{int(n[i])}", (pos[i], 0.015),
                     xycoords=("data", "axes fraction"), ha="center",
                     va="bottom", fontsize=7, color="0.45")
-        if s is None or n[i] < MIN_SUBJECTS_ROI or roi not in s.index \
+        if stats_by_roi is None or n[i] < MIN_SUBJECTS_ROI or roi not in stats_by_roi.index \
                 or not np.isfinite(tops[i]):
             continue
-        star = stars(float(s.loc[roi, "q"]))
+        star = stars(float(stats_by_roi.loc[roi, "q"]))
         if star:
             ax.annotate(star, (pos[i], tops[i]), textcoords="offset points",
                         xytext=(0, 5), ha="center", va="bottom", fontsize=11,
@@ -854,9 +839,9 @@ def band_stems(out_dir: str, stem: str, suffix: str) -> list[tuple[str, str, str
     out = []
     for band in bands:
         metric = RUN_METRIC.get(band, "")
-        f = table_path(join(out_dir, stem.format(band=band, metric=metric) + suffix))
-        if os.path.exists(f):
-            out.append((band, metric, f))
+        path = table_path(join(out_dir, stem.format(band=band, metric=metric) + suffix))
+        if os.path.exists(path):
+            out.append((band, metric, path))
     return out
 
 
@@ -866,13 +851,13 @@ def band_contrast_figure(out_dir: str, stem: str, col: str, ylabel: str, bars: b
     stem without its `_{band}` / `_{metric}` fields; `bars`: bars of the mean +/- SEM
     (roi_bar_panel) instead of subject distributions, saved with suffix `_sem`."""
     panels = []
-    for band, metric, f in band_stems(out_dir, stem, "_per_subject.csv"):
-        tbl = pd.read_csv(f)
-        st = roi_stats(tbl, col)
+    for band, metric, path in band_stems(out_dir, stem, "_per_subject.csv"):
+        tbl = pd.read_csv(path)
+        roi_table = roi_stats(tbl, col)
         panels.append((f"{band_label(band)}\n{ylabel.format(metric=METRIC_LABELS.get(metric, metric))}",
-                       (lambda ax, st=st: roi_bar_panel(ax, st)) if bars else
-                       (lambda ax, tbl=tbl, st=st: roi_panel(ax, tbl, col, np.random.default_rng(0), stats=st,
-                                                             ylim=(None, 1.0)))))
+                       (lambda ax, roi_table=roi_table: roi_bar_panel(ax, roi_table)) if bars else
+                       (lambda ax, tbl=tbl, roi_table=roi_table: roi_panel(ax, tbl, col, np.random.default_rng(0),
+                                                                           stats=roi_table, ylim=(None, 1.0)))))
     if panels:   # none when no band's run metric has been plotted yet
         roi_figure(panels, out_dir, stem.replace("_{band}", "").replace("_{metric}", "") + ("_sem" if bars else ""),
                    **(dict(width=6.5, height=2.8) if bars else {}))   # bars: compact, for half-width paper panels
@@ -895,69 +880,71 @@ def epoch_network_figure(out_dir: str, stem: str, ylabel: str, top_n: int = 5,
     from matplotlib import patheffects
     from matplotlib.lines import Line2D
     from nilearn import plotting
-    rows = [(band_label(b), m, f) for b, m, f in band_stems(out_dir, stem, "_hubs.csv")
-            if only is None or b in only]   # (label, metric, hubs csv)
-    if not rows:
+    band_rows = [(band_label(b), m, path) for b, m, path in band_stems(out_dir, stem, "_hubs.csv")
+                 if only is None or b in only]
+    if not band_rows:
         return
-    nE = len(EPOCHS)
-    ncol = ncols or nE
-    per = -(-nE // ncol)   # grid rows per band
-    fig, axes = plt.subplots(len(rows) * per, ncol, figsize=(2.7 * ncol + 2.5, 3.2 * len(rows) * per + 0.6),
-                             squeeze=False)
-    at = lambda r, c: axes[r * per + c // ncol, c % ncol]
-    for k in range(nE, per * ncol):   # spare cells
-        for r in range(len(rows)):
-            at(r, k).axis("off")
-    for r, (row_label, metric, f) in enumerate(rows):
-        hubs = pd.read_csv(f)
-        pairs = pd.read_csv(f.replace("_hubs.csv", "_stats.csv")).dropna(subset=["t"])
+    n_epochs = len(EPOCHS)
+    ncol = ncols or n_epochs
+    rows_per_band = -(-n_epochs // ncol)
+    fig, axes = plt.subplots(len(band_rows) * rows_per_band, ncol,
+                             figsize=(2.7 * ncol + 2.5, 3.2 * len(band_rows) * rows_per_band + 0.6), squeeze=False)
+    cell = lambda r, c: axes[r * rows_per_band + c // ncol, c % ncol]
+    for k in range(n_epochs, rows_per_band * ncol):   # spare cells
+        for r in range(len(band_rows)):
+            cell(r, k).axis("off")
+    for r, (row_label, metric, hubs_csv) in enumerate(band_rows):
+        hubs = pd.read_csv(hubs_csv)
+        pairs = pd.read_csv(hubs_csv.replace("_hubs.csv", "_stats.csv")).dropna(subset=["t"])
         pairs[["a", "b"]] = pairs["roi"].str.split("|", expand=True)
         pairs = pairs[pairs["a"] != pairs["b"]]
-        cen = pd.read_csv(f.replace("_hubs.csv", "_centroids.csv"), index_col="roi")
-        rois = sorted(cen.index, key=lambda x: (ROI_ORDER.index(x) if x in ROI_ORDER else 99, x))
-        idx = {x: i for i, x in enumerate(rois)}
-        xyz = cen.loc[rois, ["x", "y", "z"]].to_numpy()
-        small = len(rois) > 12
+        centroids = pd.read_csv(hubs_csv.replace("_hubs.csv", "_centroids.csv"), index_col="roi")
+        rois = sorted(centroids.index, key=lambda roi: (ROI_ORDER.index(roi) if roi in ROI_ORDER else 99, roi))
+        roi_index = {roi: i for i, roi in enumerate(rois)}
+        xyz = centroids.loc[rois, ["x", "y", "z"]].to_numpy()
+        many_rois = len(rois) > 12
         tmax = float(np.nanmax(np.abs(pairs["t"]))) if len(pairs) else 1.0
         for c, (w0, w1) in enumerate(EPOCHS):
-            h = hubs[(hubs["epoch_ms"] == w0) & (hubs["q"] < 0.05)].set_index("roi")["t"]
-            color = ["red" if h.get(x, 0) > 0 else "blue" if h.get(x, 0) < 0 else "0.75" for x in rois]
-            size = [(30 if small else 90) if x in h.index else (6 if small else 25) for x in rois]
-            disp = plotting.plot_connectome(np.zeros((len(rois), len(rois))), xyz, axes=at(r, c),
-                                            display_mode="z", node_color=color, node_size=size,
-                                            node_kwargs={"edgecolors": "black", "linewidths": 0.6},
-                                            colorbar=False, annotate=False)
-            pe = pairs[pairs["epoch_ms"] == w0]
-            for hub, ht in h.items():
-                mine = pe[(pe["a"] == hub) | (pe["b"] == hub)]
-                for _, e in mine.reindex(mine["mean"].abs().sort_values(ascending=False).index).head(top_n).iterrows():
-                    if e["a"] not in idx or e["b"] not in idx:
+            hub_t = hubs[(hubs["epoch_ms"] == w0) & (hubs["q"] < 0.05)].set_index("roi")["t"]
+            color = ["red" if hub_t.get(roi, 0) > 0 else "blue" if hub_t.get(roi, 0) < 0 else "0.75" for roi in rois]
+            size = [(30 if many_rois else 90) if roi in hub_t.index else (6 if many_rois else 25) for roi in rois]
+            display = plotting.plot_connectome(np.zeros((len(rois), len(rois))), xyz, axes=cell(r, c),
+                                               display_mode="z", node_color=color, node_size=size,
+                                               node_kwargs={"edgecolors": "black", "linewidths": 0.6},
+                                               colorbar=False, annotate=False)
+            epoch_pairs = pairs[pairs["epoch_ms"] == w0]
+            for hub in hub_t.index:
+                hub_edges = epoch_pairs[(epoch_pairs["a"] == hub) | (epoch_pairs["b"] == hub)]
+                strongest = hub_edges.reindex(hub_edges["mean"].abs().sort_values(ascending=False).index).head(top_n)
+                for _, edge in strongest.iterrows():
+                    if edge["a"] not in roi_index or edge["b"] not in roi_index:
                         continue
-                    A = np.zeros((len(rois), len(rois)))
-                    A[idx[e["a"]], idx[e["b"]]] = A[idx[e["b"]], idx[e["a"]]] = np.sign(e["mean"])
-                    disp.add_graph(A, xyz, node_size=0, edge_cmap="bwr", edge_vmin=-1, edge_vmax=1,
-                                   edge_kwargs={"linewidth": max_lw * abs(e["t"]) / tmax})
-            if not small:   # 12 ROIs: shorthand label on top of everything ('L-frontal' -> 'LFr')
-                gax = list(disp.axes.values())[0].ax
-                for x, (px, py, _) in zip(rois, xyz):
-                    hemi, lobe = x.split("-", 1)
-                    below = lobe == "occipital"   # occipital labels under the node, away from parietal
-                    gax.text(px, py + (-7 if below else 7), hemi + lobe[:2].title(), fontsize=9,
-                             fontweight="bold", ha="center", va="top" if below else "bottom", zorder=1000,
-                             path_effects=[patheffects.withStroke(linewidth=2.5, foreground="white")])
+                    adjacency = np.zeros((len(rois), len(rois)))
+                    adjacency[roi_index[edge["a"]], roi_index[edge["b"]]] = \
+                        adjacency[roi_index[edge["b"]], roi_index[edge["a"]]] = np.sign(edge["mean"])
+                    display.add_graph(adjacency, xyz, node_size=0, edge_cmap="bwr", edge_vmin=-1, edge_vmax=1,
+                                      edge_kwargs={"linewidth": max_lw * abs(edge["t"]) / tmax})
+            if not many_rois:   # shorthand label on top of everything ('L-frontal' -> 'LFr')
+                glass_ax = list(display.axes.values())[0].ax
+                for roi, (px, py, _) in zip(rois, xyz):
+                    hemi, lobe = roi.split("-", 1)
+                    below = lobe == "occipital"   # under the node, away from parietal
+                    glass_ax.text(px, py + (-7 if below else 7), hemi + lobe[:2].title(), fontsize=9,
+                                  fontweight="bold", ha="center", va="top" if below else "bottom", zorder=1000,
+                                  path_effects=[patheffects.withStroke(linewidth=2.5, foreground="white")])
             if r == 0:
-                at(r, c).set_title(f"{w0:g}–{w1:g} ms", fontsize=15)
+                cell(r, c).set_title(f"{w0:g}–{w1:g} ms", fontsize=15)
         handles = [Line2D([], [], marker="o", ls="", color="red", ms=9, label="Positive hub"),
                    Line2D([], [], marker="o", ls="", color="blue", ms=9, label="Negative hub"),
                    Line2D([], [], color="red", lw=3, label="Synchronized"),
                    Line2D([], [], color="blue", lw=3, label="Desynchronized")]
-        spare = per * ncol > nE
-        (at(r, per * ncol - 1) if spare else at(r, nE - 1)).legend(
+        spare = rows_per_band * ncol > n_epochs
+        (cell(r, rows_per_band * ncol - 1) if spare else cell(r, n_epochs - 1)).legend(
                            handles=handles, loc="center" if spare else "center left",
                            bbox_to_anchor=(0.5, 0.5) if spare else (1.05, 0.5),
                            frameon=False, fontsize=11, title_fontsize=12,
                            title=ylabel.format(metric=METRIC_LABELS.get(metric, metric)).replace(" (", "\n("))
-        at(r, 0).text(-0.08, 0.5, row_label, transform=at(r, 0).transAxes,
+        cell(r, 0).text(-0.08, 0.5, row_label, transform=cell(r, 0).transAxes,
                         rotation=90, ha="right", va="center", multialignment="center", fontsize=15)
     path = join(out_dir, stem.replace("_{band}", "").replace("_{metric}", "") + tag)
     fig.savefig(f"{path}.png", dpi=300, bbox_inches="tight")
@@ -968,11 +955,11 @@ def epoch_network_figure(out_dir: str, stem: str, ylabel: str, top_n: int = 5,
 
 def pretty_roi(name: Any) -> str:
     """'L-occipital' -> 'L-Occipital'; other labels just get a capital first letter."""
-    t = str(name)
-    if "-" in t and len(t.split("-", 1)[0]) == 1:
-        hemi, rest = t.split("-", 1)
+    label = str(name)
+    if "-" in label and len(label.split("-", 1)[0]) == 1:
+        hemi, rest = label.split("-", 1)
         return f"{'' if hemi == 'B' else hemi.upper() + '-'}{rest[:1].upper()}{rest[1:]}"
-    return t[:1].upper() + t[1:]
+    return label[:1].upper() + label[1:]
 
 
 def bin_stats(tbl: pd.DataFrame, x: str, y: str, min_subjects: int | None = None,
@@ -983,29 +970,29 @@ def bin_stats(tbl: pd.DataFrame, x: str, y: str, min_subjects: int | None = None
     rows = []
     present = set(tbl["roi"])   # ROIs in plotting order; anything else (ROI pairs) sorted
     for roi in [r for r in ROI_ORDER if r in present] + sorted(present - set(ROI_ORDER)):
-        sub = tbl[tbl["roi"] == roi]
-        for b in sorted(sub[x].unique()):
-            v = sub.loc[sub[x] == b, y].dropna().to_numpy(float)
+        roi_rows = tbl[tbl["roi"] == roi]
+        for bin_value in sorted(roi_rows[x].unique()):
+            values = roi_rows.loc[roi_rows[x] == bin_value, y].dropna().to_numpy(float)
             t = p = np.nan
-            if v.size >= (min_subjects or MIN_SUBJECTS_ROI) and np.ptp(v) > 0:
-                t, p = ttest_1samp(v, 0.0)
-            rows.append({"roi": roi, x: b, "n": v.size,
-                         "mean": float(np.mean(v)) if v.size else np.nan,
-                         "sem": float(np.std(v, ddof=1) / np.sqrt(v.size)) if v.size > 1 else np.nan,
-                         "ci95": mean_ci(v)[1] if v.size > 1 else np.nan,
+            if values.size >= (min_subjects or MIN_SUBJECTS_ROI) and np.ptp(values) > 0:
+                t, p = ttest_1samp(values, 0.0)
+            rows.append({"roi": roi, x: bin_value, "n": values.size,
+                         "mean": float(np.mean(values)) if values.size else np.nan,
+                         "sem": float(np.std(values, ddof=1) / np.sqrt(values.size)) if values.size > 1 else np.nan,
+                         "ci95": mean_ci(values)[1] if values.size > 1 else np.nan,
                          "t": float(t), "p": float(p)})
     out = pd.DataFrame(rows)
-    m = out["p"].notna().to_numpy()
+    tested = out["p"].notna().to_numpy()
     out["q"] = np.nan
-    if m.any():
-        out.loc[m, "q"] = multipletests(out.loc[m, "p"].to_numpy(float), method=fdr)[1]
+    if tested.any():
+        out.loc[tested, "q"] = multipletests(out.loc[tested, "p"].to_numpy(float), method=fdr)[1]
     return out
 
 
 def lobe_key(fig: Any, y: float = 1.0, fontsize: float = 11) -> None:
     """One line of lobe names, each in its LOBE_COLORS colour, centred at figure height `y`."""
     from matplotlib.lines import Line2D
-    fig.legend([Line2D([], [], ls="") for _ in LOBE_COLORS], [l.capitalize() for l in LOBE_COLORS],
+    fig.legend([Line2D([], [], ls="") for _ in LOBE_COLORS], [lobe.capitalize() for lobe in LOBE_COLORS],
                labelcolor=list(LOBE_COLORS.values()), loc="lower center", bbox_to_anchor=(0.5, y),
                ncol=len(LOBE_COLORS), frameon=False, handlelength=0, handletextpad=0, columnspacing=1.5,
                prop={"size": fontsize, "weight": "bold"})
@@ -1021,16 +1008,17 @@ def roi_curve_figure(stats: pd.DataFrame, x: str, path: str, xlabel: str, ylabel
     axes = np.atleast_1d(axes).ravel()
     ylim = np.nanmax(np.abs(stats["mean"].to_numpy(float))) * 1.35 or 1.0
     for ax, roi in zip(axes, rois):
-        s = stats[stats["roi"] == roi].sort_values(x)
-        xv, y, e = (s[c].to_numpy(float) for c in (x, "mean", "ci95"))
-        col = LOBE_COLORS.get(roi.split("-", 1)[1], "C0")
+        roi_rows = stats[stats["roi"] == roi].sort_values(x)
+        xs, mean, ci = (roi_rows[c].to_numpy(float) for c in (x, "mean", "ci95"))
+        color = LOBE_COLORS.get(roi.split("-", 1)[1], "C0")
         ax.axhline(0, color="0.6", lw=0.8, zorder=1)
-        ax.fill_between(xv, y - e, y + e, alpha=0.25, lw=0, color=col, zorder=2)
-        ax.plot(xv, y, lw=1.6, color=col, zorder=3)
-        for xi, qi in zip(xv, s["q"].to_numpy(float)):
+        ax.fill_between(xs, mean - ci, mean + ci, alpha=0.25, lw=0, color=color, zorder=2)
+        ax.plot(xs, mean, lw=1.6, color=color, zorder=3)
+        for xi, qi in zip(xs, roi_rows["q"].to_numpy(float)):
             if stars(qi):
                 ax.text(xi, ylim * 0.80, stars(qi), ha="center", va="center", fontsize=9, zorder=4)
-        ax.set_title(f"{pretty_roi(roi)}  (n={int(np.nanmax(s['n']))})", fontsize=9, color=col, fontweight="bold")
+        ax.set_title(f"{pretty_roi(roi)}  (n={int(np.nanmax(roi_rows['n']))})", fontsize=9, color=color,
+                     fontweight="bold")
         ax.set_ylim(-ylim, ylim)
     for ax in axes[len(rois):]:
         ax.axis("off")
@@ -1069,8 +1057,8 @@ def session_files(d: Any, suffix: str, n_sessions: int | None = None) -> list[Pa
     """Sorted per-session files `<ftag><suffix>` in d, for sessions INCLUDED in
     root_dir's sess_list_df.json only, so stale files of excluded sessions are
     never aggregated."""
-    inc = pd.read_json(join(root_dir, "sess_list_df.json")).query("include == True")
-    keep = {f"{r.sub}_{r.exp}_{r.sess}" for r in inc.itertuples()}
+    included = pd.read_json(join(root_dir, "sess_list_df.json")).query("include == True")
+    keep = {f"{r.sub}_{r.exp}_{r.sess}" for r in included.itertuples()}
     return [f for f in sorted(Path(d).glob(f"*{suffix}")) if f.name[:-len(suffix)] in keep][:n_sessions]
 
 

@@ -83,19 +83,19 @@ class ExclusionLog:
         return self.count(f"{name}_excluded", _count(before) - _count(after))
 
     def to_frame(self) -> pd.DataFrame:
-        base = {"config": self.config, **self.keys, "contrast": self.contrast}
+        ids = {"config": self.config, **self.keys, "contrast": self.contrast}
         return pd.DataFrame(
-            [{**base, "tag": t, "value": v} for t, v in self.records],
+            [{**ids, "tag": tag, "value": value} for tag, value in self.records],
             columns=LONG_COLS)
 
     def _filename(self) -> str:
-        k = self.keys
-        return f"{self.config}__{k['experiment']}_{k['subject']}_{k['session']}__{self.contrast}.csv"
+        keys = self.keys
+        return f"{self.config}__{keys['experiment']}_{keys['subject']}_{keys['session']}__{self.contrast}.csv"
 
     def write(self) -> str:
-        d = join(self.out_dir, "per_session")
-        os.makedirs(d, exist_ok=True)
-        path = join(d, self._filename())
+        per_session_dir = join(self.out_dir, "per_session")
+        os.makedirs(per_session_dir, exist_ok=True)
+        path = join(per_session_dir, self._filename())
         self.to_frame().to_csv(path, index=False)
         return path
 
@@ -112,7 +112,7 @@ def aggregate_exclusion_logs(
     if not files:
         df = pd.DataFrame(columns=LONG_COLS)
     else:
-        df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+        df = pd.concat([pd.read_csv(path) for path in files], ignore_index=True)
     df.to_csv(join(str(out_dir), "event_exclusions.csv"), index=False)
     return df
 
@@ -127,12 +127,12 @@ def check_invariant(df: pd.DataFrame) -> list[tuple[Any, int, int, int]]:
     event-drop stage was missed)."""
     bad: list[tuple[Any, int, int, int]] = []
     id_cols = [c for c in ID_COLS if c in df.columns] or ["config"]
-    for keys, g in df.groupby(id_cols):
-        tags = dict(zip(g["tag"], g["value"]))
+    for keys, group in df.groupby(id_cols):
+        tags = dict(zip(group["tag"], group["value"]))
         if "input_count" in tags and "final_count" in tags:
-            excl = int(sum(v for t, v in tags.items() if t.endswith("_excluded")))
-            if int(tags["input_count"]) - excl != int(tags["final_count"]):
-                bad.append((keys, int(tags["input_count"]), excl, int(tags["final_count"])))
+            n_excluded = int(sum(value for tag, value in tags.items() if tag.endswith("_excluded")))
+            if int(tags["input_count"]) - n_excluded != int(tags["final_count"]):
+                bad.append((keys, int(tags["input_count"]), n_excluded, int(tags["final_count"])))
     return bad
 
 
@@ -140,13 +140,13 @@ def _ordered_stages(df_contrast: pd.DataFrame) -> list[str]:
     """Ordered stage tags for one contrast: input_count, exclusions in
     first-appearance order, final_count last."""
     seen: list[str] = []
-    for t in df_contrast["tag"]:
-        if t not in seen:
-            seen.append(t)
-    excl = [t for t in seen if t.endswith("_excluded")]
+    for tag in df_contrast["tag"]:
+        if tag not in seen:
+            seen.append(tag)
+    exclusions = [tag for tag in seen if tag.endswith("_excluded")]
     head = ["input_count"] if "input_count" in seen else []
     tail = ["final_count"] if "final_count" in seen else []
-    return head + excl + tail
+    return head + exclusions + tail
 
 
 def summarize_event_exclusions(df: pd.DataFrame) -> pd.DataFrame:
@@ -163,28 +163,26 @@ def summarize_event_exclusions(df: pd.DataFrame) -> pd.DataFrame:
     q25, q75, iqr, min, max, n_subjects).
     """
     def _describe(vals: NDArrayAny) -> dict[str, float]:
-        v = np.asarray(vals, dtype=float)
-        v = v[np.isfinite(v)]
-        if v.size == 0:
+        finite = np.asarray(vals, dtype=float)
+        finite = finite[np.isfinite(finite)]
+        if finite.size == 0:
             return {k: float("nan") for k in
                     ("mean", "sd", "median", "q25", "q75", "iqr", "min", "max")}
-        q25, q75 = float(np.percentile(v, 25)), float(np.percentile(v, 75))
-        return {"mean": float(v.mean()), "sd": float(v.std(ddof=1)) if v.size > 1 else 0.0,
-                "median": float(np.median(v)), "q25": q25, "q75": q75,
-                "iqr": q75 - q25, "min": float(v.min()), "max": float(v.max())}
+        q25, q75 = float(np.percentile(finite, 25)), float(np.percentile(finite, 75))
+        return {"mean": float(finite.mean()), "sd": float(finite.std(ddof=1)) if finite.size > 1 else 0.0,
+                "median": float(np.median(finite)), "q25": q25, "q75": q75,
+                "iqr": q75 - q25, "min": float(finite.min()), "max": float(finite.max())}
 
     rows: list[dict[str, Any]] = []
-    for contrast, dc in df.groupby("contrast"):
-        stages = _ordered_stages(dc)
-        # subject × tag totals (sum over sessions within subject)
+    for contrast, df_contrast in df.groupby("contrast"):
+        stages = _ordered_stages(df_contrast)
         wide = cast(pd.DataFrame,
-                    dc.groupby(["subject", "tag"])["value"].sum().unstack("tag")
+                    df_contrast.groupby(["subject", "tag"])["value"].sum().unstack("tag")
                     ).reindex(columns=stages)
         excl_stages = [s for s in stages if s.endswith("_excluded")]
-        inp = wide["input_count"] if "input_count" in wide else None
-        # Verify the funnel balances at the subject level (the unit of final
-        # analysis): input − Σ(excluded) must equal final for every subject.
-        if inp is not None and "final_count" in wide:
+        inputs = wide["input_count"] if "input_count" in wide else None
+        # checked per subject, the unit of final analysis
+        if inputs is not None and "final_count" in wide:
             excl_sum = (wide[excl_stages].sum(axis=1) if excl_stages
                         else pd.Series(0.0, index=wide.index))
             imbalance = (wide["input_count"].fillna(0) - excl_sum.fillna(0)
@@ -199,25 +197,22 @@ def summarize_event_exclusions(df: pd.DataFrame) -> pd.DataFrame:
         for stage in stages:
             if stage not in wide:
                 continue
-            cnt = wide[stage].to_numpy(dtype=float)
-            # remaining entering this stage = input - cumulative prior exclusions.
-            # input_count has no previous stage (-> 100%); an exclusion stage's
-            # "previous" excludes only stages before it; final follows all.
+            counts = wide[stage].to_numpy(dtype=float)
             if stage == "input_count":
                 prior: list[str] = []
             elif stage in excl_stages:
                 prior = excl_stages[:excl_stages.index(stage)]
             else:
                 prior = excl_stages
-            if inp is not None:
-                remaining = inp.to_numpy(dtype=float) - (wide[prior].sum(axis=1).to_numpy(dtype=float) if prior else 0.0)
+            if inputs is not None:
+                remaining = inputs.to_numpy(dtype=float) - (wide[prior].sum(axis=1).to_numpy(dtype=float) if prior else 0.0)
             else:
-                remaining = np.full_like(cnt, np.nan)
-            forms = {"count": cnt}
-            if inp is not None:
+                remaining = np.full_like(counts, np.nan)
+            forms = {"count": counts}
+            if inputs is not None:
                 with np.errstate(divide="ignore", invalid="ignore"):
-                    forms["pct_of_input"] = 100.0 * cnt / inp.to_numpy(dtype=float)
-                    forms["pct_of_prev"] = 100.0 * cnt / remaining
+                    forms["pct_of_input"] = 100.0 * counts / inputs.to_numpy(dtype=float)
+                    forms["pct_of_prev"] = 100.0 * counts / remaining
             for metric, vals in forms.items():
                 rows.append({"contrast": contrast, "stage": stage, "metric": metric,
                              "n_subjects": int(np.isfinite(np.asarray(vals, float)).sum()),

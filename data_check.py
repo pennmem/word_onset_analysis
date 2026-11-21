@@ -28,9 +28,7 @@ from project_paths import PAIR_DISTANCE_THRESHOLD_MM, LONGETAL
 
 NDArrayAny = npt.NDArray[Any]
 
-# data_check-internal QC constants. Non-critical (validation mechanics / cohort
-# scope, not scientific tunables), so they live here rather than config.yaml —
-# but are module-level + importable for other modules and tests.
+# Validation mechanics / cohort scope, not scientific tunables, so not in config.yaml.
 DATA_CHECK_EEG_WINDOW_MS: tuple[int, int] = (-1500, 1500)
 COHORT_EXPERIMENTS: tuple[str, ...] = tuple(LONGETAL["experiments"]) if LONGETAL else ("FR1", "catFR1", "pyFR")
 
@@ -69,14 +67,14 @@ def _constant_channels(raw: Any, chunk: int = 1 << 18) -> NDArrayAny:
     Scans in chunks and stops looking at a channel as soon as it varies, so
     live channels cost one chunk each."""
     n_ch, n_times = len(raw.ch_names), raw.n_times
-    first = raw.get_data(start=0, stop=1)[:, 0]
+    first_sample = raw.get_data(start=0, stop=1)[:, 0]
     flat = np.ones(n_ch, dtype=bool)
     for start in range(0, n_times, chunk):
-        idx = np.flatnonzero(flat)
-        if not len(idx):
+        still_flat = np.flatnonzero(flat)
+        if not len(still_flat):
             break
-        d = raw.get_data(picks=idx, start=start, stop=min(start + chunk, n_times))
-        flat[idx] &= (d == first[idx, None]).all(axis=1)
+        chunk_data = raw.get_data(picks=still_flat, start=start, stop=min(start + chunk, n_times))
+        flat[still_flat] &= (chunk_data == first_sample[still_flat, None]).all(axis=1)
     return flat
 
 
@@ -93,30 +91,30 @@ def check_eeg(
     try:
         reader = helper.bids_reader(dfrow)
         raw = reader.load_raw(acquisition=helper.BIDS_ACQUISITION)
-        mono = helper.BIDS_ACQUISITION == 'monopolar'   # longetal: recording channels are contacts
-        chans = (list(dict.fromkeys([*pairs['contact_label_1'], *pairs['contact_label_2']]))
-                 if mono else list(pairs['label']))
-        missing = sorted(set(chans) - set(raw.ch_names))
+        monopolar = helper.BIDS_ACQUISITION == 'monopolar'   # longetal: recording channels are contacts
+        channels = (list(dict.fromkeys([*pairs['contact_label_1'], *pairs['contact_label_2']]))
+                    if monopolar else list(pairs['label']))
+        missing = sorted(set(channels) - set(raw.ch_names))
         data_check['eeg_pairs_match'] = not missing
         assert not missing, f'pairs absent from the recording: {missing}'
-        raw.pick(chans)
-        flat_set = set(np.asarray(chans)[_constant_channels(raw)])
-        flat = ((pairs['contact_label_1'].isin(flat_set) | pairs['contact_label_2'].isin(flat_set))
-                if mono else pairs['label'].isin(flat_set)).to_numpy()
-        pairs = pairs[~flat].reset_index(drop=True)
-        data_check['no_bad_channels_removed'] = int(flat.sum())
+        raw.pick(channels)
+        flat_channels = set(np.asarray(channels)[_constant_channels(raw)])
+        flat_pair = ((pairs['contact_label_1'].isin(flat_channels) | pairs['contact_label_2'].isin(flat_channels))
+                     if monopolar else pairs['label'].isin(flat_channels)).to_numpy()
+        pairs = pairs[~flat_pair].reset_index(drop=True)
+        data_check['no_bad_channels_removed'] = int(flat_pair.sum())
         assert len(pairs), 'every pair is flat'
         pairs.to_json(_pairs_path(dfrow, root_dir))
 
         events = reader.load_events()
         data_check['n_word'] = int((events['trial_type'] == 'WORD').sum())
         data_check['english'] = bool(events.loc[events['trial_type'] == 'WORD', 'stim_file'].astype(str).str.contains('_EN').any())   # wordpool_EN vs _SP
-        word = events[events['trial_type'] == 'WORD'].iloc[:1]
-        assert len(word), 'no WORD events'
-        ev = pd.DataFrame({'mstime': (word['onset'] * 1000).round().astype(int).to_numpy(),
-                           'eegoffset': word['sample'].astype(int).to_numpy()})
-        ev.attrs['mask'] = np.ones(len(ev), dtype=bool)
-        eeg, _ = helper.get_eeg(dfrow, ev, start, end)
+        first_word = events[events['trial_type'] == 'WORD'].iloc[:1]
+        assert len(first_word), 'no WORD events'
+        word_ev = pd.DataFrame({'mstime': (first_word['onset'] * 1000).round().astype(int).to_numpy(),
+                                'eegoffset': first_word['sample'].astype(int).to_numpy()})
+        word_ev.attrs['mask'] = np.ones(len(word_ev), dtype=bool)
+        eeg, _ = helper.get_eeg(dfrow, word_ev, start, end)
         assert eeg.shape[0] == 1, 'the check clip runs off the recording'
         data_check['sr'] = float(eeg.samplerate)
         data_check['eeg_channels'] = list(eeg.channel.values)
@@ -131,9 +129,9 @@ def line_peaks(eeg: Any, freqs: tuple[int, ...] = (100, 120, 150)) -> dict[str, 
     """Mains-harmonic power / neighbouring power in the raw (un-notched) check clip,
     median over channels (1 = no peak). Reported only: harmonics are not notched."""
     from scipy.signal import welch
-    f, P = welch(np.asarray(eeg.data)[0], float(eeg.samplerate), nperseg=512)
-    return {f"line_{f0}": float(np.median(P[:, np.abs(f - f0) <= 1].mean(1)
-                                          / P[:, (np.abs(f - f0) >= 3) & (np.abs(f - f0) <= 8)].mean(1)))
+    psd_freqs, psd = welch(np.asarray(eeg.data)[0], float(eeg.samplerate), nperseg=512)
+    return {f"line_{f0}": float(np.median(psd[:, np.abs(psd_freqs - f0) <= 1].mean(1)
+                                          / psd[:, (np.abs(psd_freqs - f0) >= 3) & (np.abs(psd_freqs - f0) <= 8)].mean(1)))
             for f0 in freqs}
 
 
@@ -188,21 +186,20 @@ def apply_inclusion_rules(
     sess_list_df['exclusion_reason'] = ''
 
     def _exclude(mask: "pd.Series", reason: str) -> None:
-        # first-cause: only stamp sessions not already attributed to a prior rule
-        fresh = mask & sess_list_df['exclusion_reason'].eq('')
+        unattributed = mask & sess_list_df['exclusion_reason'].eq('')
         sess_list_df.loc[mask, 'include'] = False
-        sess_list_df.loc[fresh, 'exclusion_reason'] = reason
+        sess_list_df.loc[unattributed, 'exclusion_reason'] = reason
 
     _exclude(~sess_list_df['sr_present'], 'sr_missing')
     _exclude(sess_list_df['sr'] < min_sample_rate_hz, 'sub_500hz')
     from project_paths import MAX_LINE_HARMONIC_RATIO, NOTCH_HARMONICS_UP_TO_HZ
-    lines = sess_list_df.reindex(columns=['line_100', 'line_120', 'line_150'])
+    line_ratios = sess_list_df.reindex(columns=['line_100', 'line_120', 'line_150'])
     if NOTCH_HARMONICS_UP_TO_HZ:   # a notched mains harmonic is no reason to exclude
-        us = ~sess_list_df['sub'].astype(str).str.contains('FR')   # 60 Hz sites (helper.notch_filter)
+        us_site = ~sess_list_df['sub'].astype(str).str.contains('FR')   # 60 Hz sites (helper.notch_filter)
         for f0 in (100, 120, 150):
             if f0 <= NOTCH_HARMONICS_UP_TO_HZ:
-                lines.loc[(us if f0 % 60 == 0 else ~us), f'line_{f0}'] = np.nan
-    _exclude((lines > MAX_LINE_HARMONIC_RATIO).any(axis=1), 'line_noise')
+                line_ratios.loc[(us_site if f0 % 60 == 0 else ~us_site), f'line_{f0}'] = np.nan
+    _exclude((line_ratios > MAX_LINE_HARMONIC_RATIO).any(axis=1), 'line_noise')
     return sess_list_df
 
 
@@ -258,28 +255,22 @@ def build_sess_list_df_data_check(root_dir: str) -> pd.DataFrame:
         for key in sess_list_df.index[~complete & ~(keep_rest & has_complete)]:
             _deny(key, 'incomplete_session')
 
-    # Per-session denylist of empirically-unrecoverable sessions (curated from
-    # error triage of full-pipeline runs). Columns: subject, experiment,
-    # session, error, explanation (the last two are bookkeeping).
+    # Curated from error triage of full-pipeline runs; error/explanation columns are bookkeeping.
     if UNRECOVERABLE_SESSIONS_CSV.exists():
         for _, row in pd.read_csv(UNRECOVERABLE_SESSIONS_CSV).iterrows():
             _deny((row['subject'], row['experiment'], int(row['session'])), 'unrecoverable')
 
-    # Manual exclusion list (config/excluded_sessions.csv): curatorial removals
-    # applied HERE (not after events) so the events/FC stages skip them via
-    # include==False and they never enter the event log unaccounted. Reason is
-    # stamped 'manual' (override) — it's the operative decision regardless of
-    # any data-quality issue.
+    # Applied here (not after events) so later stages skip them via include==False and they
+    # never enter the event log unaccounted; 'manual' overrides any data-quality reason.
     excluded_csv = join(os.path.dirname(os.path.abspath(__file__)),
                         'config', 'excluded_sessions.csv')
     if ex(excluded_csv):
         for _, row in pd.read_csv(excluded_csv).iterrows():
             _deny((row['sub'], row['exp'], int(row['sess'])), 'manual', override=True)
 
-    # Any remaining excluded session with no stamped reason -> catch-all, so the
-    # exclusion report's per-reason tags always partition data_check_excluded.
-    orphan = (~sess_list_df['include'].astype(bool)) & sess_list_df['exclusion_reason'].eq('')
-    sess_list_df.loc[orphan, 'exclusion_reason'] = 'data_check_other'
+    # catch-all, so the per-reason tags always partition data_check_excluded
+    no_reason = (~sess_list_df['include'].astype(bool)) & sess_list_df['exclusion_reason'].eq('')
+    sess_list_df.loc[no_reason, 'exclusion_reason'] = 'data_check_other'
 
     sess_list_df.to_json(join(root_dir, 'sess_list_df_data_check.json'))
 

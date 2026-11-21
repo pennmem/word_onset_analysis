@@ -46,44 +46,44 @@ def main() -> None:
         for c in np.flatnonzero(responsive(p)):
             if roi[c] is None:
                 continue
-            r = {"sub": str(p["sid"][0]), "label": str(p["labels"][c]), "roi": roi[c]}
-            pk_l, pk_s = (half_max(np.nanmean(x[m, c], 0), t)[1] for m in (long, short))
-            r["peak"] = pk_l - pk_s
-            r["pre"] = np.nanmean(pre[long, c]) - np.nanmean(pre[short, c])
-            rows.append(r)
+            row = {"sub": str(p["sid"][0]), "label": str(p["labels"][c]), "roi": roi[c]}
+            peak_long, peak_short = (half_max(np.nanmean(x[trials, c], 0), t)[1] for trials in (long, short))
+            row["peak"] = peak_long - peak_short
+            row["pre"] = np.nanmean(pre[long, c]) - np.nanmean(pre[short, c])
+            rows.append(row)
     el = pd.DataFrame(rows).groupby(["sub", "label", "roi"], as_index=False)[["peak", "pre"]].mean()
     os.makedirs(args.out_dir, exist_ok=True)
     stem = join(args.out_dir, f"hg_anticipation_{BEH}")
     el.to_csv(fc.table_path(f"{stem}_per_electrode.csv"), index=False)
 
-    tbl = el.groupby(["sub", "roi"], as_index=False)[["peak", "pre"]].mean()
-    st = fc.roi_stats(tbl, "peak")
-    st.to_csv(fc.table_path(f"{stem}_peak_stats.csv"), index=False)
-    sp = fc.roi_stats(tbl, "pre")   # pre-stimulus: the word-off window (-700..-100 ms), same units and axis as the peak
-    sp.to_csv(fc.table_path(f"{stem}_pre_stats.csv"), index=False)
+    per_sub = el.groupby(["sub", "roi"], as_index=False)[["peak", "pre"]].mean()
+    peak_stats = fc.roi_stats(per_sub, "peak")
+    peak_stats.to_csv(fc.table_path(f"{stem}_peak_stats.csv"), index=False)
+    pre_stats = fc.roi_stats(per_sub, "pre")   # word-off window (-700..-100 ms)
+    pre_stats.to_csv(fc.table_path(f"{stem}_pre_stats.csv"), index=False)
     fig, ax = plt.subplots(figsize=(3.4, 3.4), layout="constrained")   # before the word: its own scale
-    fc.roi_dot_panel(ax, {"End of ISI": sp}, "High gamma power, long − short ISI")
+    fc.roi_dot_panel(ax, {"End of ISI": pre_stats}, "High gamma power, long − short ISI")
     fig.savefig(f"{stem}_pre.png", dpi=200); fig.savefig(f"{stem}_pre.pdf"); plt.close(fig)
-    allsub = el.groupby("sub")["peak"].mean()
-    print(f"[anticipation] peak, all electrodes: {allsub.mean():+.4g} ± "
-          f"{allsub.std() / np.sqrt(len(allsub)):.3g} SEM (n={len(allsub)} subjects)")
-    for name, draw in (("", lambda ax: fc.roi_bar_panel(ax, st)),
-                       ("_box", lambda ax: fc.roi_panel(ax, tbl, "peak", np.random.default_rng(0), stats=st,
+    sub_peak = el.groupby("sub")["peak"].mean()
+    print(f"[anticipation] peak, all electrodes: {sub_peak.mean():+.4g} ± "
+          f"{sub_peak.std() / np.sqrt(len(sub_peak)):.3g} SEM (n={len(sub_peak)} subjects)")
+    for name, draw in (("", lambda ax: fc.roi_bar_panel(ax, peak_stats)),
+                       ("_box", lambda ax: fc.roi_panel(ax, per_sub, "peak", np.random.default_rng(0), stats=peak_stats,
                                                         ylim=(-0.5, 0.5)))):
         fc.roi_figure([("High-gamma response peak\nlong − short ISI", draw)], args.out_dir, f"hg_anticipation_{BEH}{name}")
 
     if getattr(args, "simulation_tag", None):   # wait times come from the events: the same in every simulation
         return
     # wait (blank) durations, all words; trials are split at each session's own median
-    w = np.concatenate(waits)
+    isi = np.concatenate(waits)
     fig, ax = plt.subplots(figsize=(6, 3.8))
-    lo, hi = np.percentile(w, [0.1, 99.9])   # a few pauses of several seconds would stretch the axis
+    lo, hi = np.percentile(isi, [0.1, 99.9])   # a few pauses of several seconds would stretch the axis
     # bins of one 60 Hz screen frame: word timing is frame-locked, finer bins alias
-    ax.hist(w[(w >= lo) & (w <= hi)], bins=np.arange(lo, hi + 1000 / 60, 1000 / 60), color="0.6", edgecolor="white", lw=0.3)
+    ax.hist(isi[(isi >= lo) & (isi <= hi)], bins=np.arange(lo, hi + 1000 / 60, 1000 / 60), color="0.6", edgecolor="white", lw=0.3)
     lo95, hi95 = np.percentile(medians, [2.5, 97.5])
     ax.axvspan(lo95, hi95, color="tab:red", alpha=0.25, lw=0, zorder=3,
                label=f"95% of session\nmedians ({lo95:.0f}–{hi95:.0f} ms)")
-    ax.axvline(np.median(w), color="tab:red", ls="--", lw=1, zorder=4, label=f"overall median ({np.median(w):.0f} ms)")
+    ax.axvline(np.median(isi), color="tab:red", ls="--", lw=1, zorder=4, label=f"overall median ({np.median(isi):.0f} ms)")
     ax.set_xlabel("ISI before the word (ms)", fontsize=12)
     ax.set_ylabel("Words", fontsize=12)
     ax.legend(frameon=False, fontsize=10)

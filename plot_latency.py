@@ -38,12 +38,12 @@ SMOOTH_MS = 30
 
 def responsive(p: dict) -> np.ndarray:
     """(C,) word on > word off per-trial power: one-sided Welch t, BH-FDR within session, q < .05."""
-    lo, hi = np.asarray(p["trial_pow_lo"], float), np.asarray(p["trial_pow_hi"], float)
-    _, pv = ttest_ind(hi, lo, axis=0, equal_var=False, alternative="greater", nan_policy="omit")
-    ok = np.isfinite(pv)
-    resp = np.zeros(len(pv), bool)
-    if ok.any():
-        resp[ok] = multipletests(pv[ok], method="fdr_bh")[0]
+    pow_off, pow_on = np.asarray(p["trial_pow_lo"], float), np.asarray(p["trial_pow_hi"], float)
+    _, pvals = ttest_ind(pow_on, pow_off, axis=0, equal_var=False, alternative="greater", nan_policy="omit")
+    finite = np.isfinite(pvals)
+    resp = np.zeros(len(pvals), bool)
+    if finite.any():
+        resp[finite] = multipletests(pvals[finite], method="fdr_bh")[0]
     return resp
 
 
@@ -59,11 +59,11 @@ def response(p: dict) -> tuple[np.ndarray, np.ndarray]:
 def half_max(c: np.ndarray, times: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """(latency, peak) along the last axis within PEAK_WIN_MS: latency = first time the
     curve reaches half its peak; NaN where the peak is <= 0."""
-    w = (times >= PEAK_WIN_MS[0]) & (times < PEAK_WIN_MS[1])
-    c, t = c[..., w], times[w]
-    pk = c.max(-1)
-    lat = t[np.argmax(c >= pk[..., None] / 2, -1)]
-    return np.where(pk > 0, lat, np.nan), pk
+    in_win = (times >= PEAK_WIN_MS[0]) & (times < PEAK_WIN_MS[1])
+    c, t = c[..., in_win], times[in_win]
+    peak = c.max(-1)
+    lat = t[np.argmax(c >= peak[..., None] / 2, -1)]
+    return np.where(peak > 0, lat, np.nan), peak
 
 
 def electrode_rows(p: dict, lobe_of: dict) -> list[tuple]:
@@ -94,10 +94,10 @@ def main() -> None:
         if times is None:
             times = p["env_hi_t0_ms"] + p["env_step_ms"] * (np.arange(np.shape(p["env_hi"])[-1]) + 0.5)
         rows += electrode_rows(p, lobe_of)
-    # region: the anatomical label without hemisphere (default), or (--rois) the Burke ROI
+    # anatomical label without hemisphere, or (--rois) the Burke ROI
     region = [r[2] if args.rois else r[5].split(" ", 1)[1] for r in rows]
-    lobe = {g: r[2].split("-", 1)[1] for g, r in zip(region, rows)}   # region -> Burke lobe (colour)
-    el = pd.DataFrame([(r[0], r[1], g, r[3]) for r, g in zip(rows, region)],
+    lobe = {reg: r[2].split("-", 1)[1] for reg, r in zip(region, rows)}   # for colour
+    el = pd.DataFrame([(r[0], r[1], reg, r[3]) for r, reg in zip(rows, region)],
                       columns=["sub", "label", "roi", "latency_ms"])
     curves = np.array([r[4] for r in rows])
     (pd.DataFrame([(r[0], r[1], r[2], r[5], r[3]) for r in rows], columns=["sub", "label", "roi", "fine", "latency_ms"])
@@ -107,67 +107,68 @@ def main() -> None:
 
     # sessions -> electrode (mean), electrodes -> subject x ROI (median)
     el = el.groupby(["sub", "label", "roi"], as_index=False)["latency_ms"].mean()
-    tbl = el.groupby(["sub", "roi"], as_index=False).agg(latency_ms=("latency_ms", "median"),
-                                                          n_elec=("label", "size"))
-    st = []
-    for roi, g in tbl.groupby("roi"):
-        m, ci = fc.mean_ci(g["latency_ms"].to_numpy())
-        st.append({"roi": roi, "n_subjects": len(g), "n_electrodes": int(g["n_elec"].sum()),
-                   "mean_ms": m, "ci95_ms": ci, "sem_ms": float(g["latency_ms"].std(ddof=1) / np.sqrt(len(g))),
-                   "median_ms": float(g["latency_ms"].median())})
-    st = pd.DataFrame(st).sort_values("mean_ms")
+    per_sub = el.groupby(["sub", "roi"], as_index=False).agg(latency_ms=("latency_ms", "median"),
+                                                              n_elec=("label", "size"))
+    stats = []
+    for roi, roi_subs in per_sub.groupby("roi"):
+        mean, ci = fc.mean_ci(roi_subs["latency_ms"].to_numpy())
+        stats.append({"roi": roi, "n_subjects": len(roi_subs), "n_electrodes": int(roi_subs["n_elec"].sum()),
+                      "mean_ms": mean, "ci95_ms": ci,
+                      "sem_ms": float(roi_subs["latency_ms"].std(ddof=1) / np.sqrt(len(roi_subs))),
+                      "median_ms": float(roi_subs["latency_ms"].median())})
+    stats = pd.DataFrame(stats).sort_values("mean_ms")
     stem = join(args.out_dir, "hg_latency_word_on" + ("" if args.rois else "_fine_pooled"))
-    st.to_csv(fc.table_path(f"{stem}_stats.csv"), index=False)
-    tbl.to_csv(fc.table_path(f"{stem}_per_subject.csv"), index=False)
-    print(st.round(1).to_string(index=False))
+    stats.to_csv(fc.table_path(f"{stem}_stats.csv"), index=False)
+    per_sub.to_csv(fc.table_path(f"{stem}_per_subject.csv"), index=False)
+    print(stats.round(1).to_string(index=False))
 
-    shown = st[st["n_subjects"] >= fc.MIN_SUBJECTS_ROI]
-    # group-mean response per ROI: electrode curves -> subject mean -> mean over subjects
-    cdf = pd.DataFrame(curves)
-    cdf[["sub", "roi"]] = [(r[0], g) for r, g in zip(rows, region)]
-    shown_t = (times >= 0) & (times < 1000)              # the plotted range
-    subj = cdf.groupby(["roi", "sub"]).mean().loc[:, shown_t]
-    g = subj.groupby("roi")
-    prof = g.mean().reindex(shown["roi"])
+    shown = stats[stats["n_subjects"] >= fc.MIN_SUBJECTS_ROI]
+    # electrode curves -> subject mean -> mean over subjects
+    curve_df = pd.DataFrame(curves)
+    curve_df[["sub", "roi"]] = [(r[0], reg) for r, reg in zip(rows, region)]
+    shown_t = (times >= 0) & (times < 1000)
+    sub_curves = curve_df.groupby(["roi", "sub"]).mean().loc[:, shown_t]
+    by_roi = sub_curves.groupby("roi")
+    profile = by_roi.mean().reindex(shown["roi"])
     # pointwise 95% CI across subjects (t-based), descriptive
-    ci = (g.std(ddof=1) / np.sqrt(g.size().to_numpy()[:, None])
-          * tdist.ppf(0.975, g.size().to_numpy()[:, None] - 1)).reindex(shown["roi"])
-    peak = prof.max(axis=1)
-    prof, ci = prof.div(peak, axis=0), ci.div(peak, axis=0)   # scaled to each region's group peak
+    ci = (by_roi.std(ddof=1) / np.sqrt(by_roi.size().to_numpy()[:, None])
+          * tdist.ppf(0.975, by_roi.size().to_numpy()[:, None] - 1)).reindex(shown["roi"])
+    peak = profile.max(axis=1)
+    profile, ci = profile.div(peak, axis=0), ci.div(peak, axis=0)
 
-    # bars and heatmap share the rows (and one set of row labels, on the bars)
-    fig, (a1, a2) = plt.subplots(1, 2, figsize=(8.5, 0.36 * len(shown) + 1.8), sharey=True,
-                                 gridspec_kw={"width_ratios": [1, 1.8], "wspace": 0.05})
+    # bars and curves share the rows (one set of row labels, on the bars)
+    fig, (ax_bar, ax_curve) = plt.subplots(1, 2, figsize=(8.5, 0.36 * len(shown) + 1.8), sharey=True,
+                                             gridspec_kw={"width_ratios": [1, 1.8], "wspace": 0.05})
     y = np.arange(len(shown))
     xmax = float((shown["mean_ms"] + shown["sem_ms"]).max()) * 1.25
     for i, r in enumerate(shown.itertuples()):
-        a1.barh(i, r.mean_ms, xerr=r.sem_ms, height=0.7, capsize=3, edgecolor="0.15", ecolor="0.2",
-                color=fc.LOBE_COLORS.get(lobe[r.roi], "0.5"))
-        a1.annotate(f"n={r.n_subjects}", (xmax * 0.98, i), ha="right", va="center", fontsize=11, color="0.4")
-    a1.set_yticks(y, [fc.pretty_roi(r) for r in shown["roi"]], fontsize=13)
-    for lab, r in zip(a1.get_yticklabels(), shown["roi"]):   # region names in their lobe colour
-        lab.set_color(fc.LOBE_COLORS.get(lobe[r], "k"))
-        lab.set_fontweight("bold")
-    for ax in (a1, a2):
+        ax_bar.barh(i, r.mean_ms, xerr=r.sem_ms, height=0.7, capsize=3, edgecolor="0.15", ecolor="0.2",
+                    color=fc.LOBE_COLORS.get(lobe[r.roi], "0.5"))
+        ax_bar.annotate(f"n={r.n_subjects}", (xmax * 0.98, i), ha="right", va="center", fontsize=11, color="0.4")
+    ax_bar.set_yticks(y, [fc.pretty_roi(r) for r in shown["roi"]], fontsize=13)
+    for tick, r in zip(ax_bar.get_yticklabels(), shown["roi"]):
+        tick.set_color(fc.LOBE_COLORS.get(lobe[r], "k"))
+        tick.set_fontweight("bold")
+    for ax in (ax_bar, ax_curve):
         ax.tick_params(axis="x", labelsize=12)
-    a1.set_ylim(len(shown) - 0.5, -0.5)   # first row at the top, for both panels
-    a1.set_xlim(0, xmax)
-    a1.set_xlabel("Half-max latency (ms)", fontsize=14)
-    a1.spines[["top", "right"]].set_visible(False)
-    # one curve per row (each scaled to its own peak), baseline at the bottom of the row
-    tt = times[shown_t]
-    for i, (r, curve, e) in enumerate(zip(shown["roi"], prof.to_numpy(), ci.to_numpy())):
-        col = fc.LOBE_COLORS.get(lobe[r], "0.5")
-        a2.axhline(i + 0.4, color="0.85", lw=0.6, zorder=0)                     # each row's zero
-        a2.fill_between(tt, i + 0.4 - 0.8 * (curve - e), i + 0.4 - 0.8 * (curve + e),
-                        color=col, alpha=0.3, lw=0)                             # 95% CI
-        a2.plot(tt, i + 0.4 - 0.8 * curve, color=col, lw=1.5)
-    a2.set_xlim(0, 1000)
-    a2.tick_params(axis="y", left=False, labelleft=False)
-    a2.spines[["top", "right", "left"]].set_visible(False)
-    a2.set_xlabel("Time after word onset (ms)", fontsize=14)
-    a2.yaxis.set_label_position("right")
-    a2.set_ylabel("High-gamma response\n(fraction of peak)", fontsize=13)
+    ax_bar.set_ylim(len(shown) - 0.5, -0.5)   # first row at the top, for both panels
+    ax_bar.set_xlim(0, xmax)
+    ax_bar.set_xlabel("Half-max latency (ms)", fontsize=14)
+    ax_bar.spines[["top", "right"]].set_visible(False)
+    # one curve per row, baseline at the bottom of the row
+    t_shown = times[shown_t]
+    for i, (r, curve, curve_ci) in enumerate(zip(shown["roi"], profile.to_numpy(), ci.to_numpy())):
+        color = fc.LOBE_COLORS.get(lobe[r], "0.5")
+        ax_curve.axhline(i + 0.4, color="0.85", lw=0.6, zorder=0)
+        ax_curve.fill_between(t_shown, i + 0.4 - 0.8 * (curve - curve_ci), i + 0.4 - 0.8 * (curve + curve_ci),
+                              color=color, alpha=0.3, lw=0)
+        ax_curve.plot(t_shown, i + 0.4 - 0.8 * curve, color=color, lw=1.5)
+    ax_curve.set_xlim(0, 1000)
+    ax_curve.tick_params(axis="y", left=False, labelleft=False)
+    ax_curve.spines[["top", "right", "left"]].set_visible(False)
+    ax_curve.set_xlabel("Time after word onset (ms)", fontsize=14)
+    ax_curve.yaxis.set_label_position("right")
+    ax_curve.set_ylabel("High-gamma response\n(fraction of peak)", fontsize=13)
     fc.lobe_key(fig, y=0.93, fontsize=13)
     fig.tight_layout()
     fig.savefig(f"{stem}.png", dpi=300, bbox_inches="tight")   # keeps the row labels

@@ -110,16 +110,16 @@ def _word_locked_eeg(dfrow: pd.Series, beh: str, win: tuple[float, float],
     import fc_comparison_functions as fc
     import helper
 
-    ev = fc.load_events(dfrow, beh)
-    if ev is None:
+    events = fc.load_events(dfrow, beh)
+    if events is None:
         return None
-    post_mask = np.asarray(ev.attrs["mask"], bool)
+    post_mask = np.asarray(events.attrs["mask"], bool)
     if not post_mask.any():
         return None
-    words = ev[post_mask].reset_index(drop=True)
-    words.attrs = dict(ev.attrs)
-    # buffer_ms widens the LOADED clip beyond `win` with real adjacent data, so
-    # resample/notch (and Hilbert) edge effects stay outside the analysis windows.
+    words = events[post_mask].reset_index(drop=True)
+    words.attrs = dict(events.attrs)
+    # buffer_ms pads the loaded clip with real data so resample/notch/Hilbert
+    # edge effects stay outside the analysis windows
     eeg, _ = fc.get_beh_eeg(dfrow, words, win, buffer_ms, simulation_tag)
     kept = np.asarray(eeg.event, int)
     items = words["item_name"].to_numpy()[kept]   # word of each kept event
@@ -128,27 +128,24 @@ def _word_locked_eeg(dfrow: pd.Series, beh: str, win: tuple[float, float],
                 float(eeg.samplerate), items, None)
     # blank screen before each word: previous word's offset -> onset (ms); 750 when
     # there is no previous word in the list (first word follows the countdown)
-    bev = helper.bids_reader(dfrow, eeg=False).load_events()
-    bw = bev[bev["trial_type"] == "WORD"].sort_values("onset")
-    blank = ((bw["onset"] - (bw["onset"] + bw["duration"]).groupby(bw["list"]).shift(1)) * 1000).fillna(750.0)
-    blank = pd.Series(blank.to_numpy(), index=bw["sample"].astype(int).to_numpy())
-    blank_ms = blank.reindex(words["eegoffset"].astype(int).to_numpy()[kept]).fillna(750.0).to_numpy()
+    bids_events = helper.bids_reader(dfrow, eeg=False).load_events()
+    bids_words = bids_events[bids_events["trial_type"] == "WORD"].sort_values("onset")
+    blank_by_sample = ((bids_words["onset"] - (bids_words["onset"] + bids_words["duration"]).groupby(bids_words["list"]).shift(1)) * 1000).fillna(750.0)
+    blank_by_sample = pd.Series(blank_by_sample.to_numpy(), index=bids_words["sample"].astype(int).to_numpy())
+    blank_ms = blank_by_sample.reindex(words["eegoffset"].astype(int).to_numpy()[kept]).fillna(750.0).to_numpy()
     return (np.asarray(eeg.data), np.asarray(eeg.time, float),
             float(eeg.samplerate), items, blank_ms)
 
 
 def window_slice(data, t, win):
-    """(n_events, n_channels, n_win) slice of `data` covering `win`, inclusive.
-
-    Both endpoints are inclusive, so a window whose upper edge lands exactly on
-    a sample keeps it. The pre and post windows can therefore differ by one
-    sample (the clip's last sample is one step short of the requested end) --
+    """(n_events, n_channels, n_win) slice of `data` covering `win`, both ends
+    inclusive -- so pre and post can differ by one sample;
     `fc.equalize_time_length` reconciles them before the spectra are taken.
     """
-    m = (t >= win[0]) & (t <= win[1])
-    if m.sum() < 2:
-        raise ValueError(f"window {win} covers {int(m.sum())} samples")
-    return data[:, :, m]
+    in_win = (t >= win[0]) & (t <= win[1])
+    if in_win.sum() < 2:
+        raise ValueError(f"window {win} covers {int(in_win.sum())} samples")
+    return data[:, :, in_win]
 
 
 def band_power(seg, sf, fmin, fmax, bandwidth):
@@ -173,11 +170,11 @@ def band_power_bins(seg, sf, bandwidth, edges=FREQ_EDGES):
     """(E, C, n_bins) multitaper power averaged within each [edges[k], edges[k+1])
     bin, leaving out the notched mains frequencies (48-52, 58-62 Hz)."""
     from mne.time_frequency import psd_array_multitaper
-    psds, f = psd_array_multitaper(seg, sf, fmin=edges[0], fmax=edges[-1], bandwidth=bandwidth,
-                                   adaptive=False, low_bias=False, normalization="full", verbose=False)
-    keep = (np.abs(f - 50) > 2) & (np.abs(f - 60) > 2)
-    return np.stack([np.asarray(psds)[..., (f >= a) & (f < b) & keep].mean(-1)
-                     for a, b in zip(edges[:-1], edges[1:])], axis=-1)
+    psds, freqs = psd_array_multitaper(seg, sf, fmin=edges[0], fmax=edges[-1], bandwidth=bandwidth,
+                                       adaptive=False, low_bias=False, normalization="full", verbose=False)
+    off_mains = (np.abs(freqs - 50) > 2) & (np.abs(freqs - 60) > 2)
+    return np.stack([np.asarray(psds)[..., (freqs >= f_lo) & (freqs < f_hi) & off_mains].mean(-1)
+                     for f_lo, f_hi in zip(edges[:-1], edges[1:])], axis=-1)
 
 
 def hilbert_envelope(seg, sf, fmin, fmax, buf_samples, env_hz, n_bands=1):
@@ -190,21 +187,21 @@ def hilbert_envelope(seg, sf, fmin, fmax, buf_samples, env_hz, n_bands=1):
     import scipy.fft as sfft
     from scipy.signal import hilbert
     from mne.filter import next_fast_len
-    n = np.shape(seg)[-1]
+    n_t = np.shape(seg)[-1]
     if n_bands > 1:
-        N = next_fast_len(n)
-        f = sfft.fftfreq(N, 1 / sf)
-        X = sfft.fft(np.asarray(seg, np.float32), N, axis=-1)   # complex64 keeps memory down
+        n_fft = next_fast_len(n_t)
+        freqs = sfft.fftfreq(n_fft, 1 / sf)
+        spectrum = sfft.fft(np.asarray(seg, np.float32), n_fft, axis=-1)   # complex64 keeps memory down
         edges = np.geomspace(fmin, fmax, n_bands + 1)
         env = np.zeros(np.shape(seg), np.float32)
         for lo, hi in zip(edges[:-1], edges[1:]):
-            g = 2 * np.exp(-0.5 * ((f - np.sqrt(lo * hi)) / ((hi - lo) / 2)) ** 2) * (f > 0)
-            env += np.abs(sfft.ifft(X * g.astype(np.float32), axis=-1)[..., :n]) / n_bands
+            gauss = 2 * np.exp(-0.5 * ((freqs - np.sqrt(lo * hi)) / ((hi - lo) / 2)) ** 2) * (freqs > 0)
+            env += np.abs(sfft.ifft(spectrum * gauss.astype(np.float32), axis=-1)[..., :n_t]) / n_bands
     else:
-        x = mne.filter.filter_data(np.asarray(seg, float), sf, fmin, fmax, verbose=False)
-        env = np.abs(hilbert(x, N=next_fast_len(n), axis=-1))[..., :n]
+        filtered = mne.filter.filter_data(np.asarray(seg, float), sf, fmin, fmax, verbose=False)
+        env = np.abs(hilbert(filtered, N=next_fast_len(n_t), axis=-1))[..., :n_t]
     if buf_samples:
-        env = env[..., buf_samples:n - buf_samples]
+        env = env[..., buf_samples:n_t - buf_samples]
     return mne.filter.resample(np.asarray(env, float), down=sf / env_hz, verbose=False)
 
 
@@ -218,35 +215,25 @@ def band_power_windowed(seg, sf, fmin, fmax, bandwidth, bin_ms, window_ms):
     dur_ms = 1000.0 * n_t / sf
     n_bins = int(round(dur_ms / float(bin_ms)))
 
-    # Hold the TIME-BANDWIDTH PRODUCT constant, not the bandwidth in Hz.
-    # MNE's `bandwidth` is the full bandwidth in Hz; the normalized half-
-    # bandwidth is NW = T * bandwidth / 2, and MNE refuses NW < 0.5. The
-    # configured mt_bandwidth=2 over the full 600 ms window is NW = 0.6; the
-    # same 2 Hz over a 200 ms window would be NW = 0.2 and simply errors.
-    #
-    # Scaling bandwidth by (dur/window) keeps NW -- and therefore the taper
-    # count and the estimator's shape -- identical to the collapsed run:
-    #     600 ms @ 2 Hz  ->  NW = 0.6
-    #     200 ms @ 6 Hz  ->  NW = 0.6
-    # What cannot be preserved is the spectral smoothing in Hz (2 -> 6 Hz).
-    # That is the uncertainty principle, not a choice: a shorter window buys
-    # time resolution with frequency resolution. State it wherever these are
-    # compared to the collapsed numbers.
-    bw_win = float(bandwidth) * (dur_ms / float(window_ms))
+    # Scale bandwidth by dur/window to hold the time-bandwidth product
+    # NW = T * bandwidth / 2 (and so the tapers) fixed: 600 ms @ 2 Hz and
+    # 200 ms @ 6 Hz are both NW = 0.6, while 2 Hz over 200 ms is NW = 0.2, which
+    # MNE rejects (< 0.5). The cost is coarser smoothing in Hz (2 -> 6 Hz).
+    win_bandwidth = float(bandwidth) * (dur_ms / float(window_ms))
     centers = (np.arange(n_bins) + 0.5) * float(bin_ms)
-    half = float(window_ms) / 2.0
-    w_n = int(round(float(window_ms) * sf / 1000.0))
+    half_win_ms = float(window_ms) / 2.0
+    win_samples = int(round(float(window_ms) * sf / 1000.0))
 
-    out = np.full(seg.shape[:2] + (n_bins,), np.nan)
-    for k, c in enumerate(centers):
-        if c - half < 0 or c + half > dur_ms:
+    power = np.full(seg.shape[:2] + (n_bins,), np.nan)
+    for k, center_ms in enumerate(centers):
+        if center_ms - half_win_ms < 0 or center_ms + half_win_ms > dur_ms:
             continue
-        i0 = int(round((c - half) * sf / 1000.0))
-        sl = seg[..., i0:i0 + w_n]
-        if sl.shape[-1] != w_n:
+        start = int(round((center_ms - half_win_ms) * sf / 1000.0))
+        win_seg = seg[..., start:start + win_samples]
+        if win_seg.shape[-1] != win_samples:
             continue
-        out[..., k] = band_power(sl, sf, fmin, fmax, bw_win)
-    return out
+        power[..., k] = band_power(win_seg, sf, fmin, fmax, win_bandwidth)
+    return power
 
 
 def run_sess_power(
@@ -271,10 +258,8 @@ def run_sess_power(
     if os.path.exists(out_path):
         try:
             cached = fc.load_pickle(out_path)
-            # n_win_samples marks a pickle written after the pre/post window
-            # equalization fix. Pickles without it carry the unequal-window bias
-            # (pre estimated over one more sample than post), so treat them as
-            # stale and recompute rather than silently reporting them cached.
+            # pickles without n_win_samples predate the pre/post window
+            # equalization fix (pre had one extra sample): recompute them
             if all(k in cached for k in ("pow_lo", "pow_hi", "cohens_d",
                                          "reg_full", "n_win_samples")) and (
                     cached.get("buffer_ms") == fc.REAL_DATA_BUFFER_MS) and (
@@ -284,10 +269,10 @@ def run_sess_power(
             pass
 
     fmin, fmax = fc.bands[band]
-    hilb = fc_mode == "hilbert"   # filter edge lives in the real-data buffer
-    buf_ms = fc.REAL_DATA_BUFFER_MS if hilb else 0.0
-    spec = fc.PREPOST_SPEC[beh]
-    pre_win, post_win = spec["pre_win"], spec["post_win"]
+    is_hilbert = fc_mode == "hilbert"   # filter edge lives in the real-data buffer
+    buf_ms = fc.REAL_DATA_BUFFER_MS if is_hilbert else 0.0
+    prepost = fc.PREPOST_SPEC[beh]
+    pre_win, post_win = prepost["pre_win"], prepost["post_win"]
     loaded = _word_locked_eeg(dfrow, beh, (pre_win[0], post_win[1]),
                               buffer_ms=fc.REAL_DATA_BUFFER_MS,   # keeps notch ringing out of both windows
                               simulation_tag=simulation_tag)
@@ -305,205 +290,178 @@ def run_sess_power(
     reg_full = np.asarray(helper.regionalize_electrodes_by_type(pairs), dtype=object)
     labels = pairs["label"].astype(str).to_numpy()
 
-    # Same multitaper half-bandwidth the phase metrics use (config.yaml
-    # mt_bandwidth = 2). project_paths types it as optional (null => MNE's own
-    # ~8*sfreq/n_times default); refuse to run in that case rather than pick a
-    # bandwidth here, which would silently diverge from the connectivity front end.
+    # must equal the phase metrics' bandwidth, so no local fallback when unset
     bandwidth = fc.MT_BANDWIDTH
     if bandwidth is None:
         raise ValueError(
             "config.yaml mt_bandwidth is unset; power and the phase metrics must "
             "share one multitaper bandwidth (default mt_bandwidth: 2)")
 
-    nbuf = int(buf_ms * sf / 1000.0)
+    buf_samples = int(buf_ms * sf / 1000.0)
     widen = lambda w: (w[0] - buf_ms, w[1] + buf_ms)
-    mt_win = fc.MT_WINDOW_MS
+    mt_window_ms = fc.MT_WINDOW_MS
     time_bin_ms = fc.TIME_BIN_MS if fmin >= TIMING_MIN_HZ else None
 
     env_hz = (fc.LONGETAL or {}).get("envelope_hz", 100)
     env_cache = {}
-    def _env(seg):   # Hilbert envelope, computed once per segment
+    def _envelope(seg):
         if id(seg) not in env_cache:
-            env_cache[id(seg)] = hilbert_envelope(seg, sf, fmin, fmax, nbuf, env_hz,
+            env_cache[id(seg)] = hilbert_envelope(seg, sf, fmin, fmax, buf_samples, env_hz,
                                                   (fc.LONGETAL or {}).get("hg_bands", 1))
         return env_cache[id(seg)]
 
     def _power(seg, bin_ms=None):
-        if hilb:
-            e = _env(seg)
-            return helper.timebin_power_timeseries(e, env_hz, bin_width_ms=int(bin_ms)) if bin_ms else np.nanmean(e, -1)
+        if is_hilbert:
+            env = _envelope(seg)
+            return helper.timebin_power_timeseries(env, env_hz, bin_width_ms=int(bin_ms)) if bin_ms else np.nanmean(env, -1)
         if bin_ms:
             return band_power_windowed(seg, sf, fmin, fmax, bandwidth,
-                                       bin_ms, mt_win)
+                                       bin_ms, mt_window_ms)
         return band_power(seg, sf, fmin, fmax, bandwidth)
 
-    # Inclusive time masks give the pre window one more sample than the post
-    # window, so equalize them exactly as the FC path does before estimating
-    # spectra -- otherwise the frequency-bin centres shift between the arms.
+    # inclusive masks give pre one extra sample; equalize as the FC path does so
+    # the frequency bins match between the arms
     lo_seg = window_slice(data, t, widen(pre_win))
     hi_seg = window_slice(data, t, widen(post_win))
-    if not hilb:   # Long's windows differ in length (750 vs 1600 ms); a mean amplitude doesn't need them equal
+    if not is_hilbert:   # Long's windows differ in length (750 vs 1600 ms); a mean amplitude doesn't need them equal
         lo_seg, hi_seg = fc.equalize_time_length(lo_seg, hi_seg)
-    n_win = lo_seg.shape[-1] - 2 * nbuf
-    if hilb and LONG.get("baseline") == "full_isi":
-        # each trial's whole blank screen: blank the pre samples before the previous word's offset
-        e = _env(lo_seg)
-        t_env = pre_win[0] + np.arange(e.shape[-1]) * 1000.0 / env_hz
-        e[np.broadcast_to(t_env[None, None, :] < -blank_ms[:, None, None], e.shape)] = np.nan
-    p_lo = _power(lo_seg)
-    p_hi = _power(hi_seg)
+    n_win = lo_seg.shape[-1] - 2 * buf_samples
+    if is_hilbert and LONG.get("baseline") == "full_isi":
+        # baseline = each trial's whole blank screen: NaN the pre samples before the previous word's offset
+        env = _envelope(lo_seg)
+        t_env = pre_win[0] + np.arange(env.shape[-1]) * 1000.0 / env_hz
+        env[np.broadcast_to(t_env[None, None, :] < -blank_ms[:, None, None], env.shape)] = np.nan
+    pow_lo = _power(lo_seg)
+    pow_hi = _power(hi_seg)
 
-    p_lo[~np.isfinite(p_lo)] = np.nan
-    p_hi[~np.isfinite(p_hi)] = np.nan
+    pow_lo[~np.isfinite(pow_lo)] = np.nan
+    pow_hi[~np.isfinite(pow_hi)] = np.nan
 
     d_freq = None
     if band == "spectrum":   # Cohen's d per log-spaced frequency bin, (n_ch, n_bins)
-        b_lo, b_hi = band_power_bins(lo_seg, sf, bandwidth), band_power_bins(hi_seg, sf, bandwidth)
-        d_freq = np.asarray(helper.cohens_d(b_hi.reshape(len(b_hi), -1),
-                                            b_lo.reshape(len(b_lo), -1))).reshape(n_ch, -1)
+        freq_lo, freq_hi = band_power_bins(lo_seg, sf, bandwidth), band_power_bins(hi_seg, sf, bandwidth)
+        d_freq = np.asarray(helper.cohens_d(freq_hi.reshape(len(freq_hi), -1),
+                                            freq_lo.reshape(len(freq_lo), -1))).reshape(n_ch, -1)
 
-    # Per-bin contrast, (n_ch, n_bins). Same Cohen's d as the collapsed measure,
-    # computed independently within each time bin -> d as a function of latency.
+    # Cohen's d per time bin, (n_ch, n_bins) -> d as a function of latency.
     d_bins = bin_centers = None
     if time_bin_ms:
-        # BASELINE = the WHOLE pre window, not the matching pre bin.
-        #
-        # Every post bin is contrasted against one baseline value per event, the
-        # mean over the entire pre window. Bin-to-bin matching (post bin k vs pre
-        # bin k) would be wrong three ways: the pairing is arbitrary (nothing
-        # makes -700..-650 ms the right reference for 0..50 ms); it imports any
-        # structure in the baseline -- anticipation late in the pre window, the
-        # previous item's offset response early in it -- into the response time
-        # course with opposite sign, manufacturing a trend; and it contrasts each
-        # post bin against 1/B of the available baseline, so it is ~B times
-        # noisier than it needs to be. A single baseline also matches what the
-        # COLLAPSED figure in this same script does, and what Long et al. do
-        # (z-score to the whole blank-screen period).
-        #
-        # The baseline is built from the SAME binned estimator as the response,
-        # then averaged over bins -- not from the whole-window call (600 ms @ 2 Hz
-        # vs 100 ms @ 12 Hz would put a constant offset on the time course).
-        # nanmean also drops the edge bins that cannot fit a full window.
-        #
-        # Raw power: the mean over B baseline bins and a single response bin
-        # estimate the same expected power, so the null stays unbiased.
-        l_lo = _power(lo_seg, bin_ms=time_bin_ms)             # (E, C, B)
-        b_hi = _power(hi_seg, bin_ms=time_bin_ms)             # (E, C, B)
-        l_lo[~np.isfinite(l_lo)] = np.nan
-        base = np.nanmean(l_lo, axis=-1)                      # (E, C)
-        b_hi[~np.isfinite(b_hi)] = np.nan
-        base[~np.isfinite(base)] = np.nan
-        nb = b_hi.shape[-1]
-        d_bins = np.full((n_ch, nb), np.nan)
+        # Baseline = mean over the WHOLE pre window, one value per event, not the
+        # matching pre bin: bin-to-bin pairing is arbitrary, imports pre-window
+        # structure (anticipation, previous-word offset) with flipped sign, and is
+        # ~B times noisier; Long et al. also use the whole blank screen. It uses the
+        # same binned estimator as the response (the whole-window call would add a
+        # constant offset); nanmean drops edge bins that cannot fit a full window.
+        binned_lo = _power(lo_seg, bin_ms=time_bin_ms)             # (E, C, B)
+        binned_hi = _power(hi_seg, bin_ms=time_bin_ms)             # (E, C, B)
+        binned_lo[~np.isfinite(binned_lo)] = np.nan
+        baseline = np.nanmean(binned_lo, axis=-1)                  # (E, C)
+        binned_hi[~np.isfinite(binned_hi)] = np.nan
+        baseline[~np.isfinite(baseline)] = np.nan
+        n_bins = binned_hi.shape[-1]
+        d_bins = np.full((n_ch, n_bins), np.nan)
         for c in range(n_ch):
-            bb = base[np.isfinite(base[:, c]), c]     # one value per event
-            if bb.size <= 1:
+            base_vals = baseline[np.isfinite(baseline[:, c]), c]
+            if base_vals.size <= 1:
                 continue
-            for k in range(nb):
-                aa = b_hi[np.isfinite(b_hi[:, c, k]), c, k]
-                if aa.size > 1:
-                    d_bins[c, k] = helper.cohens_d(aa, bb)
-        # Centres are ms into the POST window; the baseline is a single scalar
-        # per event, so the axis now refers unambiguously to post-onset time.
-        bin_centers = (np.arange(nb) + 0.5) * float(time_bin_ms)
+            for k in range(n_bins):
+                post_vals = binned_hi[np.isfinite(binned_hi[:, c, k]), c, k]
+                if post_vals.size > 1:
+                    d_bins[c, k] = helper.cohens_d(post_vals, base_vals)
+        # ms into the post window
+        bin_centers = (np.arange(n_bins) + 0.5) * float(time_bin_ms)
 
-    # Per-electrode effect size, Rao et al. 2025's per-electrode quantity:
-    # `helper.cohens_d` (pooled SD) on power, hi vs lo, across events.
-    # Done channel by channel so a degenerate event drops only its own channel's
-    # contribution instead of the whole electrode (helper.cohens_d is not
-    # nan-aware); in practice every event is finite and this is one call's worth
-    # of arithmetic per channel.
-    d = np.full(n_ch, np.nan)
+    # Rao et al. 2025 per-electrode Cohen's d (pooled SD), hi vs lo across events;
+    # per channel because helper.cohens_d is not nan-aware
+    d_elec = np.full(n_ch, np.nan)
     for c in range(n_ch):
-        a = p_hi[np.isfinite(p_hi[:, c]), c]
-        b = p_lo[np.isfinite(p_lo[:, c]), c]
-        if a.size >= 2 and b.size >= 2:
-            d[c] = float(helper.cohens_d(a, b))
+        hi_vals = pow_hi[np.isfinite(pow_hi[:, c]), c]
+        lo_vals = pow_lo[np.isfinite(pow_lo[:, c]), c]
+        if hi_vals.size >= 2 and lo_vals.size >= 2:
+            d_elec[c] = float(helper.cohens_d(hi_vals, lo_vals))
 
     # Sample-level contrast (hilbert): every envelope sample is an observation,
     # as Long et al. may have done (--t-unit sample at the plot stage).
     d_samp = n_samp_lo = n_samp_hi = None
-    if hilb:
-        flat = lambda e: e.transpose(0, 2, 1).reshape(-1, e.shape[1])   # (E*T, C)
-        e_lo, e_hi = flat(_env(lo_seg)), flat(_env(hi_seg))
-        e_lo = e_lo[np.isfinite(e_lo).all(1)]   # full_isi: drop blanked samples
-        d_samp, n_samp_lo, n_samp_hi = helper.cohens_d(e_hi, e_lo), len(e_lo), len(e_hi)
+    if is_hilbert:
+        flat = lambda env: env.transpose(0, 2, 1).reshape(-1, env.shape[1])   # (E*T, C)
+        samples_lo, samples_hi = flat(_envelope(lo_seg)), flat(_envelope(hi_seg))
+        samples_lo = samples_lo[np.isfinite(samples_lo).all(1)]   # full_isi: drop blanked samples
+        d_samp, n_samp_lo, n_samp_hi = helper.cohens_d(samples_hi, samples_lo), len(samples_lo), len(samples_hi)
 
-    out: dict[str, Any] = {
+    result: dict[str, Any] = {
         "sid": (dfrow["sub"], dfrow["exp"], int(dfrow["sess"])),
         "labels": labels,
         "reg_full": reg_full,
-        "pow_lo": np.nanmean(p_lo, axis=0),
-        "pow_hi": np.nanmean(p_hi, axis=0),
-        "cohens_d": d,
+        "pow_lo": np.nanmean(pow_lo, axis=0),
+        "pow_hi": np.nanmean(pow_hi, axis=0),
+        "cohens_d": d_elec,
         "cohens_d_freq": d_freq, "freq_edges": FREQ_EDGES if d_freq is not None else None,
         "n_events": int(data.shape[0]),
-        "n_lo": int(p_lo.shape[0]), "n_hi": int(p_hi.shape[0]),
+        "n_lo": int(pow_lo.shape[0]), "n_hi": int(pow_hi.shape[0]),
         "n_win_samples": int(n_win),
         "beh": beh, "band": band, "fmin": fmin, "fmax": fmax,
         "lo_win": pre_win, "hi_win": post_win,
         "mt_bandwidth": bandwidth,
         "fc_mode": fc_mode,
-        "measure": "amplitude" if hilb else "power",   # pow_* hold amplitude under hilbert
+        "measure": "amplitude" if is_hilbert else "power",   # pow_* hold amplitude under hilbert
         "cohens_d_samples": d_samp, "n_lo_samples": n_samp_lo, "n_hi_samples": n_samp_hi,
         # per-event envelopes + words, for averaging each word over sessions (--combine word_average)
-        "env_lo": _env(lo_seg).astype(np.float32) if hilb else None,
-        "env_hi": _env(hi_seg).astype(np.float32) if hilb else None,
-        "items": items if hilb else None,
+        "env_lo": _envelope(lo_seg).astype(np.float32) if is_hilbert else None,
+        "env_hi": _envelope(hi_seg).astype(np.float32) if is_hilbert else None,
+        "items": items if is_hilbert else None,
         "simulation_tag": simulation_tag,
         "notch_harmonics_up_to_hz": fc.NOTCH_HARMONICS_UP_TO_HZ,
         "buffer_ms": fc.REAL_DATA_BUFFER_MS,
-        # Latency axis (gamma only; None otherwise).
+        # latency axis, gamma only
         "cohens_d_bins": d_bins,          # (n_ch, n_bins)
         "bin_centers_ms": bin_centers,    # ms into the post window
         "time_bin_ms": time_bin_ms,
-        "mt_window_ms": mt_win if (time_bin_ms and not hilb) else None,
+        "mt_window_ms": mt_window_ms if (time_bin_ms and not is_hilbert) else None,
     }
     os.makedirs(out_dir, exist_ok=True)
-    fc.save_pickle(out_path, out)
-    return f"{sid}: {n_ch} elec, {out['n_lo']}+{out['n_hi']} events"
+    fc.save_pickle(out_path, result)
+    return f"{sid}: {n_ch} elec, {result['n_lo']}+{result['n_hi']} events"
 
 
 # ------------------------------- plot stage ----------------------------------
 def collect_electrode_table(save_root, beh, band, lobe_of, n_sessions=None):
     """Walk the per-session pickles -> tidy per-(subject, electrode) table.
 
-    Sessions of the same subject are averaged per electrode LABEL before
-    anything else, so a
+    Sessions of the same subject are averaged per electrode LABEL first, so a
     subject with 4 sessions does not outweigh one with 1.
     """
-    d = power_dir(save_root, beh, band)
-    files = fc.session_files(d, "_power.pkl", n_sessions)
+    pkl_dir = power_dir(save_root, beh, band)
+    files = fc.session_files(pkl_dir, "_power.pkl", n_sessions)
     if not files:
         raise SystemExit(
-            f"no pickles in {d}\nrun the compute stage first: "
+            f"no pickles in {pkl_dir}\nrun the compute stage first: "
             f"python build_roi_power.py --stage compute --band {band}")
 
     rows = []
     for f in tqdm(files, desc="load sessions"):
         try:
-            p = fc.load_pickle(str(f))
+            pkl = fc.load_pickle(str(f))
         except Exception as e:
             print(f"[skip] {f.name}: {e!r}")
             continue
-        if "pow_lo" not in p:
+        if "pow_lo" not in pkl:
             print(f"[skip] {f.name}: written by an older version; "
                   "delete it and rerun the compute stage")
             continue
-        sub = str(p["sid"][0])
-        roi = fc.roi_of_reg_full(p["reg_full"], lobe_of)
-        for lab, r, lo, hi, dd in zip(p["labels"], roi, p["pow_lo"],
-                                      p["pow_hi"], p["cohens_d"]):
-            if r is None or not (np.isfinite(lo) and np.isfinite(hi)):
+        sub = str(pkl["sid"][0])
+        elec_rois = fc.roi_of_reg_full(pkl["reg_full"], lobe_of)
+        for label, roi, lo, hi, d in zip(pkl["labels"], elec_rois, pkl["pow_lo"],
+                                         pkl["pow_hi"], pkl["cohens_d"]):
+            if roi is None or not (np.isfinite(lo) and np.isfinite(hi)):
                 continue
-            rows.append((sub, str(lab), r, float(lo), float(hi), float(dd)))
+            rows.append((sub, str(label), roi, float(lo), float(hi), float(d)))
 
     if not rows:
         raise SystemExit("no electrodes with a Burke ROI and finite power")
     df = pd.DataFrame(rows,
                       columns=["sub", "label", "roi", "lo", "hi", "cohens_d"])
-    # one row per (subject, electrode): mean across that subject's sessions
-    # (power and d both as plain means)
+    # one row per (subject, electrode): plain mean over that subject's sessions
     return (df.groupby(["sub", "label", "roi"], as_index=False)
               [["lo", "hi", "cohens_d"]].mean())
 
@@ -526,16 +484,16 @@ def run_latency_stage(save_root, beh, band, args, lobe_of):
     tbl = subject_roi_bin_table(bin_df, min_electrodes=args.min_electrodes)
     stats = fc.bin_stats(tbl, "bin_ms", "d")
 
-    # Electrodes actually contributing to each ROI, after the min-electrodes cut.
-    cnt = (bin_df[bin_df["roi"].isin(set(tbl["roi"]))]
-           .groupby("roi").agg(n_elec=("label", "nunique"),
-                               n_sub=("sub", "nunique")).reset_index())
+    # after the min-electrodes cut
+    elec_counts = (bin_df[bin_df["roi"].isin(set(tbl["roi"]))]
+                   .groupby("roi").agg(n_elec=("label", "nunique"),
+                                       n_sub=("sub", "nunique")).reset_index())
     print("\n[latency] electrodes per ROI:")
-    print(cnt.sort_values("n_elec", ascending=False).to_string(index=False))
+    print(elec_counts.sort_values("n_elec", ascending=False).to_string(index=False))
 
     tag = f"{beh}_{band}_{fc.POWER_MODE}_{fc.TIME_BIN_MS}ms"
     os.makedirs(args.out_dir, exist_ok=True)
-    cnt.to_csv(fc.table_path(join(args.out_dir, f"power_timecourse_{tag}_counts.csv")),
+    elec_counts.to_csv(fc.table_path(join(args.out_dir, f"power_timecourse_{tag}_counts.csv")),
                index=False)
     stats.to_csv(fc.table_path(join(args.out_dir, f"power_timecourse_{tag}_stats.csv")),
                  index=False)
@@ -548,15 +506,14 @@ def run_latency_stage(save_root, beh, band, args, lobe_of):
           f"{stats['bin_ms'].nunique()} bins x {stats['roi'].nunique()} ROIs; "
           f"{len(sig)} cells at q<0.05")
     if len(sig):
-        # Peak per ROI, not "earliest significant cell": the latter sorts by time
-        # regardless of sign or size and so surfaces tiny suppressions (e.g.
-        # L-frontal @ 75 ms, d=-0.02) as if they were response onsets.
-        pk = (sig.loc[sig.groupby("roi")["mean"].idxmax()]
-                 .sort_values("mean", ascending=False).head(4))
+        # peak per ROI, not earliest significant cell (that surfaces tiny
+        # suppressions, e.g. L-frontal @ 75 ms d=-0.02, as onsets)
+        peaks = (sig.loc[sig.groupby("roi")["mean"].idxmax()]
+                    .sort_values("mean", ascending=False).head(4))
         print("[latency] strongest ROIs (peak bin):")
-        for _, r in pk.iterrows():
-            print(f"          {r['roi']:<14} peak @ {r['bin_ms']:>4.0f} ms  "
-                  f"d={r['mean']:+.3f}  q={r['q']:.1e}")
+        for _, row in peaks.iterrows():
+            print(f"          {row['roi']:<14} peak @ {row['bin_ms']:>4.0f} ms  "
+                  f"d={row['mean']:+.3f}  q={row['q']:.1e}")
     print(f"[latency] wrote {path}")
 
 
@@ -573,56 +530,56 @@ def run_spectrum_stage(save_root, beh, args, lobe_of):
     import matplotlib.pyplot as plt
     rows = []
     for f in fc.session_files(power_dir(save_root, beh, "spectrum"), "_power.pkl", args.n_sessions):
-        p = fc.load_pickle(str(f))
-        if p.get("cohens_d_freq") is None:
+        pkl = fc.load_pickle(str(f))
+        if pkl.get("cohens_d_freq") is None:
             continue
-        roi = fc.roi_of_reg_full(p["reg_full"], lobe_of)
-        for lab, r, fine, dd in zip(p["labels"], roi, p["reg_full"], p["cohens_d_freq"]):
-            sr = SPECTRUM_SUBREGIONS.get(fine)
-            rows += [(str(p["sid"][0]), str(lab), r, sr and f"{sr[0]}|{sr[1]}", k, float(v))
-                     for k, v in enumerate(dd)]
-    d = pd.DataFrame(rows, columns=["sub", "label", "roi", "sub_region", "bin", "d"])
+        elec_rois = fc.roi_of_reg_full(pkl["reg_full"], lobe_of)
+        for label, roi, fine_region, d_by_freq in zip(pkl["labels"], elec_rois, pkl["reg_full"], pkl["cohens_d_freq"]):
+            subregion = SPECTRUM_SUBREGIONS.get(fine_region)
+            rows += [(str(pkl["sid"][0]), str(label), roi, subregion and f"{subregion[0]}|{subregion[1]}", k, float(d))
+                     for k, d in enumerate(d_by_freq)]
+    d_df = pd.DataFrame(rows, columns=["sub", "label", "roi", "sub_region", "bin", "d"])
     centres = np.sqrt(FREQ_EDGES[:-1] * FREQ_EDGES[1:])
-    c = fc.contrast(beh)
-    tlab = f"t ({c['hi_label']} vs. {c['lo_label']})"
+    contrast = fc.contrast(beh)
+    t_label = f"t ({contrast['hi_label']} vs. {contrast['lo_label']})"
 
     def stats(col, min_elec):   # sessions -> electrode, electrodes -> subject, t per cell
-        x = d.dropna(subset=[col]).groupby(["sub", "label", col, "bin"], as_index=False)["d"].mean()
-        g = x.groupby(["sub", col, "bin"]).agg(d=("d", "mean"), n=("label", "nunique")).reset_index()
-        g = g[g["n"] >= min_elec].rename(columns={col: "roi"})
-        g["freq_hz"] = centres[g["bin"]]
-        return fc.bin_stats(g, "freq_hz", "d")
+        per_elec = d_df.dropna(subset=[col]).groupby(["sub", "label", col, "bin"], as_index=False)["d"].mean()
+        per_sub = per_elec.groupby(["sub", col, "bin"]).agg(d=("d", "mean"), n=("label", "nunique")).reset_index()
+        per_sub = per_sub[per_sub["n"] >= min_elec].rename(columns={col: "roi"})
+        per_sub["freq_hz"] = centres[per_sub["bin"]]
+        return fc.bin_stats(per_sub, "freq_hz", "d")
 
     os.makedirs(args.out_dir, exist_ok=True)
-    st = stats("roi", args.min_electrodes)
-    st.to_csv(fc.table_path(join(args.out_dir, f"power_spectrum_{beh}_rois_stats.csv")), index=False)
-    T = st.pivot(index="roi", columns="freq_hz", values="t").reindex(fc.present_rois(st))
-    Q = st.pivot(index="roi", columns="freq_hz", values="q").reindex(fc.present_rois(st))
-    v = float(np.nanmax(np.abs(T.to_numpy()))) or 1.0
+    cell_stats = stats("roi", args.min_electrodes)
+    cell_stats.to_csv(fc.table_path(join(args.out_dir, f"power_spectrum_{beh}_rois_stats.csv")), index=False)
+    t_mat = cell_stats.pivot(index="roi", columns="freq_hz", values="t").reindex(fc.present_rois(cell_stats))
+    q_mat = cell_stats.pivot(index="roi", columns="freq_hz", values="q").reindex(fc.present_rois(cell_stats))
+    vmax = float(np.nanmax(np.abs(t_mat.to_numpy()))) or 1.0
     fig, ax = plt.subplots(figsize=(11, 6.5))
-    im = ax.imshow(T.to_numpy(), cmap="RdBu_r", vmin=-v, vmax=v, aspect="auto")
-    for (i, j), q in np.ndenumerate(Q.to_numpy()):
+    im = ax.imshow(t_mat.to_numpy(), cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
+    for (i, j), q in np.ndenumerate(q_mat.to_numpy()):
         if fc.stars(q):
             ax.text(j, i, fc.stars(q), ha="center", va="center", fontsize=12)
-    ax.set_xticks(range(len(T.columns)), [f"{x:.0f}" for x in T.columns], fontsize=13)
-    ax.set_yticks(range(len(T.index)), [fc.pretty_roi(x) for x in T.index], fontsize=13)
+    ax.set_xticks(range(len(t_mat.columns)), [f"{x:.0f}" for x in t_mat.columns], fontsize=13)
+    ax.set_yticks(range(len(t_mat.index)), [fc.pretty_roi(x) for x in t_mat.index], fontsize=13)
     ax.set_xlabel("Frequency (Hz)", fontsize=14)
-    fig.colorbar(im, ax=ax).set_label(tlab, fontsize=14)
+    fig.colorbar(im, ax=ax).set_label(t_label, fontsize=14)
     fig.tight_layout()
     fig.savefig(join(args.out_dir, f"power_spectrum_{beh}_rois.png"), dpi=300)
     fig.savefig(join(args.out_dir, f"power_spectrum_{beh}_rois.pdf"))
     plt.close(fig)
 
-    st = stats("sub_region", args.min_electrodes)
-    st.to_csv(fc.table_path(join(args.out_dir, f"power_spectrum_{beh}_occipital_stats.csv")), index=False)
-    panels = sorted({x.split("|")[0] for x in st.dropna(subset=["t"])["roi"]})   # subregions with a test
+    cell_stats = stats("sub_region", args.min_electrodes)
+    cell_stats.to_csv(fc.table_path(join(args.out_dir, f"power_spectrum_{beh}_occipital_stats.csv")), index=False)
+    panels = sorted({x.split("|")[0] for x in cell_stats.dropna(subset=["t"])["roi"]})   # subregions with a test
     fig, axes = plt.subplots(1, len(panels), figsize=(6.5 * len(panels), 5), sharey=True, squeeze=False)
     for ax, panel in zip(axes[0], panels):
-        for name, s in st[st["roi"].str.startswith(panel + "|")].groupby("roi"):
-            s = s.sort_values("freq_hz")
-            line, = ax.plot(s["freq_hz"], s["t"], marker="o", lw=2,
-                            label=f"{name.split('|')[1]} (n={int(s['n'].max())})")
-            for x, y, q in zip(s["freq_hz"], s["t"], s["q"]):
+        for name, curve in cell_stats[cell_stats["roi"].str.startswith(panel + "|")].groupby("roi"):
+            curve = curve.sort_values("freq_hz")
+            line, = ax.plot(curve["freq_hz"], curve["t"], marker="o", lw=2,
+                            label=f"{name.split('|')[1]} (n={int(curve['n'].max())})")
+            for x, y, q in zip(curve["freq_hz"], curve["t"], curve["q"]):
                 if fc.stars(q):
                     ax.annotate(fc.stars(q), (x, y), textcoords="offset points", xytext=(0, 6),
                                 ha="center", fontsize=13, color=line.get_color())
@@ -634,7 +591,7 @@ def run_spectrum_stage(save_root, beh, args, lobe_of):
         ax.set_title(panel, fontsize=15)
         ax.set_xlabel("Frequency (Hz)", fontsize=14)
         ax.legend(fontsize=12, frameon=False)
-    axes[0, 0].set_ylabel(tlab, fontsize=14)
+    axes[0, 0].set_ylabel(t_label, fontsize=14)
     fig.tight_layout()
     fig.savefig(join(args.out_dir, f"power_spectrum_{beh}_occipital.png"), dpi=300)
     fig.savefig(join(args.out_dir, f"power_spectrum_{beh}_occipital.pdf"))
@@ -654,30 +611,30 @@ def run_plot_stage(save_root, beh, band, args):
           f"{len(elec_df)} ROI-assigned electrodes")
 
     stats = {m: fc.roi_stats(tbl, m) for m in MEASURES}
-    c = fc.contrast(beh)
+    contrast = fc.contrast(beh)
     fc.print_roi_stats(
         stats["cohens_d"],
-        f"{c['hi_label']} vs {c['lo_label']} {band} power (Cohen's d, mean over "
+        f"{contrast['hi_label']} vs {contrast['lo_label']} {band} power (Cohen's d, mean over "
         f"the ROI's electrodes), per ROI:")
     stem = f"roi_power_{beh}_{{band}}"
     fc.write_roi_csvs(args.out_dir, stem.format(band=band), tbl, per_elec, stats)
     for bars in (False, True):
         fc.band_contrast_figure(args.out_dir, stem, "cohens_d",
-                                f"Power, Cohen's d ({c['hi_label']} vs. {c['lo_label']})", bars=bars)
+                                f"Power, Cohen's d ({contrast['hi_label']} vs. {contrast['lo_label']})", bars=bars)
     return tbl
 
 
 # ---------------------------------- CLI --------------------------------------
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--stage", default="both", choices=("compute", "plot", "both"))
-    fc.add_common_args(p)
-    p.add_argument("--out-dir", default=join("figures", "burke_roi_power"))
-    p.add_argument("--min-electrodes", type=int, default=1,
-                   help="min electrodes a subject must have in an ROI to enter the group test")
-    args = p.parse_args()
-    args = p.parse_args()
+    parser.add_argument("--stage", default="both", choices=("compute", "plot", "both"))
+    fc.add_common_args(parser)
+    parser.add_argument("--out-dir", default=join("figures", "burke_roi_power"))
+    parser.add_argument("--min-electrodes", type=int, default=1,
+                        help="min electrodes a subject must have in an ROI to enter the group test")
+    args = parser.parse_args()
+    args = parser.parse_args()
 
     if fc.POWER_MODE != "multitaper":   # longetal: hilbert figures in their own subfolder
         args.out_dir = join(args.out_dir, fc.POWER_MODE)
@@ -687,8 +644,6 @@ def parse_args() -> argparse.Namespace:
 
 
 # --------------------------- latency (time-bin) stage -------------------------
-# `cohens_d_bins` (n_ch, n_bins): Cohen's d within each time bin (gamma only).
-
 def collect_bin_table(save_root, beh, band, lobe_of, n_sessions=None):
     """Per-(subject, electrode, time-bin) Cohen's d -> tidy frame.
 
@@ -700,22 +655,22 @@ def collect_bin_table(save_root, beh, band, lobe_of, n_sessions=None):
     rows, centers = [], None
     for f in tqdm(files, desc="load bins"):
         try:
-            p = fc.load_pickle(str(f))
+            pkl = fc.load_pickle(str(f))
         except Exception:
             continue
-        if p.get("cohens_d_bins") is None:
+        if pkl.get("cohens_d_bins") is None:
             continue
         if centers is None:
-            centers = np.asarray(p["bin_centers_ms"], float)
-        sub = str(p["sid"][0])
-        roi = fc.roi_of_reg_full(p["reg_full"], lobe_of)
-        db = np.asarray(p["cohens_d_bins"], float)
-        for lab, r, drow in zip(p["labels"], roi, db):
-            if r is None:
+            centers = np.asarray(pkl["bin_centers_ms"], float)
+        sub = str(pkl["sid"][0])
+        elec_rois = fc.roi_of_reg_full(pkl["reg_full"], lobe_of)
+        d_bins = np.asarray(pkl["cohens_d_bins"], float)
+        for label, roi, d_row in zip(pkl["labels"], elec_rois, d_bins):
+            if roi is None:
                 continue
-            for k, val in enumerate(drow):
+            for k, val in enumerate(d_row):
                 if np.isfinite(val):
-                    rows.append((sub, str(lab), r, float(centers[k]), float(val)))
+                    rows.append((sub, str(label), roi, float(centers[k]), float(val)))
 
     if not rows:
         return pd.DataFrame(columns=["sub", "label", "roi", "bin_ms", "d"])
@@ -727,19 +682,19 @@ def collect_bin_table(save_root, beh, band, lobe_of, n_sessions=None):
 def subject_roi_bin_table(bin_df, min_electrodes=3):
     """(subject, ROI, bin) mean d, applying the same electrode floor as the
     collapsed figure so the two describe the same cells."""
-    g = (bin_df.groupby(["sub", "roi", "bin_ms"])
-               .agg(d=("d", "mean"), n_elec=("label", "nunique"))
-               .reset_index())
-    return g[g["n_elec"] >= min_electrodes].reset_index(drop=True)
+    per_sub = (bin_df.groupby(["sub", "roi", "bin_ms"])
+                     .agg(d=("d", "mean"), n_elec=("label", "nunique"))
+                     .reset_index())
+    return per_sub[per_sub["n_elec"] >= min_electrodes].reset_index(drop=True)
 
 
 def main() -> None:
     args = parse_args()
     root_dir, save_root = fc.resolve_roots(args)
-    c = fc.contrast(args.beh)
-    sp = fc.PREPOST_SPEC[args.beh]
+    contrast = fc.contrast(args.beh)
+    prepost = fc.PREPOST_SPEC[args.beh]
     print(f"[setup] beh={args.beh}  band={args.band} {fc.bands[args.band]} Hz  ({fc.POWER_MODE})")
-    print(f"[setup] {c['lo_label']} (lo) {sp['pre_win']} vs {c['hi_label']} (hi) {sp['post_win']}")
+    print(f"[setup] {contrast['lo_label']} (lo) {prepost['pre_win']} vs {contrast['hi_label']} (hi) {prepost['post_win']}")
 
     if args.stage in ("compute", "both"):
         fc.run_compute_stage(

@@ -21,7 +21,6 @@ from typing import Any, Dict, cast
 
 import yaml
 
-# Repo root = directory containing this file.
 REPO_ROOT: Path = Path(__file__).resolve().parent
 _CONFIG_PATH: Path = REPO_ROOT / "config" / "config.yaml"
 
@@ -42,18 +41,18 @@ def _abs(p: str) -> Path:
 
 def _resolve_paths(raw: Dict[str, Any]) -> Dict[str, Path]:
     """Two-pass ${VAR} expansion of the `paths:` block into absolute Paths."""
-    base = {"USER": os.environ.get("USER") or getpass.getuser(), "REPO_ROOT": str(REPO_ROOT)}
+    template_vars = {"USER": os.environ.get("USER") or getpass.getuser(), "REPO_ROOT": str(REPO_ROOT)}
     if "scratch_dir" not in raw:
         raise KeyError("config/config.yaml `paths:` block is missing `scratch_dir`")
     suffix = ((".longetal" if os.environ.get("WOA_LONGETAL") else "")      # both set by the Snakefile
              + (".smokescreen" if os.environ.get("WOA_SMOKESCREEN") else ""))
-    scratch = Template(str(raw["scratch_dir"])).safe_substitute(base) + suffix   # ${SCRATCH_DIR} users follow
-    base["SCRATCH_DIR"] = str(_abs(scratch))
-    out = {k: _abs(Template(str(v)).safe_substitute(base)) for k, v in raw.items()}
+    scratch_dir = Template(str(raw["scratch_dir"])).safe_substitute(template_vars) + suffix   # ${SCRATCH_DIR} users follow
+    template_vars["SCRATCH_DIR"] = str(_abs(scratch_dir))
+    resolved = {k: _abs(Template(str(v)).safe_substitute(template_vars)) for k, v in raw.items()}
     for k in ("scratch_dir", "exclusion_counts"):
-        if k in out:
-            out[k] = Path(str(out[k]) + suffix)
-    return out
+        if k in resolved:
+            resolved[k] = Path(str(resolved[k]) + suffix)
+    return resolved
 
 
 _PATHS: Dict[str, Path] = _resolve_paths(cast(dict[str, Any], _CFG.get("paths") or {}))
@@ -73,22 +72,10 @@ def get_default(key: str) -> Any:
     return _CFG[key]
 
 
-# ---------------------------------------------------------------------------
-# Spectral bands — single project-wide source for all FC compute paths.
-#     from project_paths import BANDS
-#     fmin, fmax = BANDS[band]
-# ---------------------------------------------------------------------------
+# band -> (fmin, fmax); the single project-wide source
 BANDS: dict[str, tuple[float, float]] = {
     str(name): (float(lo), float(hi)) for name, (lo, hi) in get_default("bands").items()}
 
-
-# ---------------------------------------------------------------------------
-# Metric registry
-# ---------------------------------------------------------------------------
-
-# Metrics permanently retired from the pipeline. `dpli` was never one of the
-# thesis measures (exploratory only); banning it here makes any reintroduction
-# a hard error at import time rather than silently flowing through.
 COMPUTATION_METRICS: list[str] = list(get_default("computation_metrics"))
 SUBTRACT_ERP: bool = bool(get_default("subtract_erp"))
 # synchrony metric of each band's run (config `runs`), for figure assembly
@@ -100,14 +87,12 @@ LONGETAL: dict[str, Any] | None = get_default("longetal_params") if os.environ.g
 RESAMPLE_HZ: float | None = None if LONGETAL else float(get_default("resample_hz"))
 MIN_SAMPLE_RATE_HZ: float = float(get_default("min_sample_rate_hz"))
 MAX_LINE_HARMONIC_RATIO: float = float(get_default("max_line_harmonic_ratio"))
-# notch_harmonics_up_to_hz: None = fundamental-only notch (historical default,
-# leaves every existing result bit-identical). A float switches on harmonic
-# notching up to that frequency — required for bands that reach the line
-# harmonics, e.g. high_gamma [70,150]. See config.yaml for the full rationale.
+# None = fundamental-only notch; a float also notches line harmonics up to it
+# (needed for high_gamma [70,150]). Rationale in config.yaml.
 _notch_harm_raw = get_default("notch_harmonics_up_to_hz")
 NOTCH_HARMONICS_UP_TO_HZ: float | None = (
     None if _notch_harm_raw is None else float(_notch_harm_raw))
-# pair_distance_threshold_mm: scientific bipolar-pair distance cutoff (data_check).
+# bipolar-pair distance cutoff (data_check)
 PAIR_DISTANCE_THRESHOLD_MM: float = float(get_default("pair_distance_threshold_mm"))
 _mt_bw_raw = get_default("mt_bandwidth")
 MT_BANDWIDTH: float | None = None if _mt_bw_raw is None else float(_mt_bw_raw)
@@ -119,8 +104,7 @@ MT_WINDOW_MS: int = int(get_default("mt_window_ms"))
 SCRATCH_DIR: Path = get("scratch_dir")
 # cml_data reads the download cache location from CML_BIDS_CACHE.
 os.environ.setdefault("CML_BIDS_CACHE", str(get("bids_cache")))
-# Event/session exclusion-count logs + the config name stamped into them.
+# exclusion-count logs + the config name stamped into them
 EXCLUSION_COUNTS_DIR: Path = get("exclusion_counts")
 CONFIG_NAME: str = str(get_default("config_name"))
-# Curated tabular data shipped with the repo.
 UNRECOVERABLE_SESSIONS_CSV: Path = get("unrecoverable_sessions_csv")

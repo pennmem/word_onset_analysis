@@ -60,22 +60,21 @@ class MatchedEvents():
         events = helper.bids_reader(self.dfrow, eeg=False).load_events()
         events = events.rename(columns={'trial_type': 'type', 'sample': 'eegoffset', 'list': 'trial'})
         events['mstime'] = (events['onset'] * 1000).round().astype(int)
-        rt = pd.to_numeric(events['response_time'], errors='coerce')
-        events['rectime'] = np.where(rt.notna(), (rt * 1000).round(), NA_INT).astype(int)
+        response_s = pd.to_numeric(events['response_time'], errors='coerce')
+        events['rectime'] = np.where(response_s.notna(), (response_s * 1000).round(), NA_INT).astype(int)
         events['eegfile'] = f'{self.sub}_{self.exp}_{self.sess}'
         events['subject'], events['session'], events['experiment'] = self.sub, self.sess, self.exp
         events = events.sort_values(by=['mstime', 'eegoffset'], kind='stable').reset_index(drop=True)
 
-        #session-specific changes
         dfrow_key = (self.sub, self.exp, int(self.sess))
-        errors = {('R1329T', 'FR1', 0): 'trial != 4',
+        bad_list_query = {('R1329T', 'FR1', 0): 'trial != 4',
                   ('R1341T', 'FR1', 1): 'trial != 8',
                   ('R1374T', 'FR1', 0): 'trial != 1',
                   ('R1488T', 'catFR1', 0): 'trial != 11',
                   ('TJ040', 'pyFR', 0): 'trial != 6',
                   ('FR060', 'pyFR', 1): 'trial != 1'}
         
-        if dfrow_key in errors.keys(): events = events.query(errors[dfrow_key])
+        if dfrow_key in bad_list_query.keys(): events = events.query(bad_list_query[dfrow_key])
         
         self.events = events
         self.n_lists = np.max(events['trial'])
@@ -101,7 +100,7 @@ class MatchedEvents():
             """Return whether word has already been said for the current list."""
             
             words = list(words)
-            return [1 if word in words[:iWord] else 0 for iWord, word in enumerate(words)]
+            return [1 if word in words[:i] else 0 for i, word in enumerate(words)]
 
         all_recs = []
 
@@ -116,15 +115,13 @@ class MatchedEvents():
 
         item_col_name = 'item_name' if 'item_name' in events.columns else 'item'
 
-        # Get study word events during encoding.
         study_events = events.query(f'(type=="WORD") & (0<trial<={self.n_lists})').reset_index(drop=True)
         study_events.drop(columns=['rectime', 'type'], inplace=True)
         word_list = pd.pivot(study_events, index='trial', columns='serialpos', values=item_col_name)
 
-        # Get recall events during retrieval.
         rec_events = events.query(f'(type==["REC_WORD", "REC_WORD_VV"]) & (0<trial<={self.n_lists})')
-        assert np.all(np.asarray([type(x) == str for x in events.query('type == "REC_WORD_VV"')[item_col_name].values]))
-        rec_events = rec_events[np.asarray([type(x) == str for x in rec_events[item_col_name].values])]
+        assert np.all(np.asarray([type(item) == str for item in events.query('type == "REC_WORD_VV"')[item_col_name].values]))
+        rec_events = rec_events[np.asarray([type(item) == str for item in rec_events[item_col_name].values])]
         rec_events.reset_index(inplace=True,drop=True)
         
         study_events['correct_recall'] = study_events.apply(lambda r: bool(np.isin(r[item_col_name], 
@@ -134,15 +131,15 @@ class MatchedEvents():
         self.study_events = study_events
         
         rec_events.drop(columns=['serialpos'], inplace=True)
-        rec_events['correct'] = rec_events.apply(lambda x: 1 * np.isin(x[item_col_name], word_list.loc[x['trial']]), axis=1)
-        rec_events['pli'] = rec_events.apply(lambda x: flag_intrusions(x, word_list, 'pli'), axis=1)
-        rec_events['oli'] = rec_events.apply(lambda x: flag_intrusions(x, word_list, 'oli'), axis=1)
+        rec_events['correct'] = rec_events.apply(lambda row: 1 * np.isin(row[item_col_name], word_list.loc[row['trial']]), axis=1)
+        rec_events['pli'] = rec_events.apply(lambda row: flag_intrusions(row, word_list, 'pli'), axis=1)
+        rec_events['oli'] = rec_events.apply(lambda row: flag_intrusions(row, word_list, 'oli'), axis=1)
         rec_events['repeat'] = np.concatenate(rec_events.groupby('trial')[item_col_name].apply(flag_repeats).values)
         
         rec_events['study_trial'] = -1
-        rec_events.loc[rec_events['oli']==0, 'study_trial'] = (rec_events.loc[rec_events['oli']==0, item_col_name].apply(lambda x: word_list.iloc[np.where(word_list==x)].index[0]))
+        rec_events.loc[rec_events['oli']==0, 'study_trial'] = (rec_events.loc[rec_events['oli']==0, item_col_name].apply(lambda item: word_list.iloc[np.where(word_list==item)].index[0]))
         rec_events['study_pos'] = -1
-        rec_events.loc[rec_events['oli']==0, 'study_pos'] = (rec_events.loc[rec_events['oli']==0, item_col_name].apply(lambda x: word_list.iloc[np.where(word_list==x)].columns[0]))
+        rec_events.loc[rec_events['oli']==0, 'study_pos'] = (rec_events.loc[rec_events['oli']==0, item_col_name].apply(lambda item: word_list.iloc[np.where(word_list==item)].columns[0]))
         
         def get_rec_pos(words): 
             return [len(words.iloc[:(i+1)].query('type == "REC_WORD"')) for i, _ in words.reset_index().iterrows()]
@@ -169,11 +166,10 @@ class MatchedEvents():
         pre_rec_distance: int,
     ) -> pd.DataFrame:
         
-        #get information for each recall event one at a time (remove REC_START events because not real recalls)
+        # REC_START is not a recall
         recall_events = recall_events.query('type != "REC_START"') 
         item_col_name = 'item_name' if 'item_name' in recall_events.columns else 'item'
 
-        #inital dataframes for the start and stop times of periods of silence 
         cols = ['list', 'eegoffset', 'eegfile' ,'mstime', 'rectime', 'type', item_col_name]
         start_df = pd.DataFrame([], columns = cols)
         stop_df = pd.DataFrame([], columns = cols)
@@ -185,41 +181,32 @@ class MatchedEvents():
             min_idx, max_idx = evs['rec_pos'].idxmin(), evs['rec_pos'].idxmax()
             return (evs.loc[min_idx, 'mstime'], evs.loc[max_idx, 'mstime'])
 
-        search_limits = {l:(set_search_limits(recall_events[recall_events['list'] == l])) for l in recall_events['list'].unique()}
+        search_limits = {list_no:(set_search_limits(recall_events[recall_events['list'] == list_no])) for list_no in recall_events['list'].unique()}
 
-        for x in range(recall_events.shape[0]-1):
+        for i in range(recall_events.shape[0]-1):
             
-            #current rec information
-            silence_l = recall_events.iloc[x].list            
-            eegfile = recall_events.iloc[x].eegfile
-            if eegfile != recall_events.iloc[x+1].eegfile: continue
-            if silence_l != recall_events.iloc[x+1].list: continue 
+            silence_list = recall_events.iloc[i].list            
+            eegfile = recall_events.iloc[i].eegfile
+            if eegfile != recall_events.iloc[i+1].eegfile: continue
+            if silence_list != recall_events.iloc[i+1].list: continue 
 
-            silence_rec_start = recall_events.iloc[x].rectime + post_rec_distance
-            silence_ms_start = recall_events.iloc[x].mstime + (post_rec_distance) 
-            silence_eegoffset = recall_events.iloc[x].eegoffset + (post_rec_distance * (self.sr / 1000.))
+            silence_rec_start = recall_events.iloc[i].rectime + post_rec_distance
+            silence_ms_start = recall_events.iloc[i].mstime + (post_rec_distance) 
+            silence_eegoffset = recall_events.iloc[i].eegoffset + (post_rec_distance * (self.sr / 1000.))
 
-            silence_rec_stop = recall_events.iloc[x+1].rectime - pre_rec_distance
-            silence_ms_stop = recall_events.iloc[x+1].mstime - (pre_rec_distance)
-            silence_eegoffset_stop = recall_events.iloc[x+1].eegoffset - (pre_rec_distance * (self.sr / 1000.)) 
+            silence_rec_stop = recall_events.iloc[i+1].rectime - pre_rec_distance
+            silence_ms_stop = recall_events.iloc[i+1].mstime - (pre_rec_distance)
+            silence_eegoffset_stop = recall_events.iloc[i+1].eegoffset - (pre_rec_distance * (self.sr / 1000.)) 
             silence_eegoffset_len = silence_eegoffset_stop - silence_eegoffset
             silence_rectime_len = silence_rec_stop - silence_rec_start
-            # print('___')
-            # print(silence_l, recall_events.iloc[x+1].list)
-            # print(recall_events.iloc[x].type, recall_events.iloc[x+1].type)
-            # print(silence_rec_start, silence_rec_stop)
-            # print(silence_rectime_len, silence_len)
-            # print(silence_ms_start, search_limits[silence_l][0])
-            # print(silence_ms_stop, search_limits[silence_l][1])
-            if (silence_rec_start < silence_rec_stop) and (silence_rectime_len >= silence_len) and (silence_ms_start >= search_limits[silence_l][0]) and (silence_ms_stop <= search_limits[silence_l][1]):
+            if (silence_rec_start < silence_rec_stop) and (silence_rectime_len >= silence_len) and (silence_ms_start >= search_limits[silence_list][0]) and (silence_ms_stop <= search_limits[silence_list][1]):
                 
-                # print(x, recall_events.iloc[x][item_col_name], silence_rec_start, silence_rec_stop, silence_eegoffset, silence_eegoffset_stop, recall_events.iloc[(x):(x+2)].eegfile.values)
                 assert silence_eegoffset < silence_eegoffset_stop, 'silence period start eegoffset is less than stop eegoffset' 
 
-                #split longer periods of silence into two
+                # split long silences into silence_len chunks
                 if silence_rectime_len >= (silence_len*2):
 
-                    #need to make sure that mstime, rectime, and eegoffset has the same amount of splits or it'll mess everything up
+                    # same split count on all three clocks keeps them aligned
                     rec_time_range = np.arange(silence_rec_start, silence_rec_stop+1)
                     ms_time_range = np.arange(silence_ms_start, silence_ms_stop+1)
                     eegoffset_time_range = np.arange(silence_eegoffset, silence_eegoffset_stop+1)
@@ -244,23 +231,21 @@ class MatchedEvents():
                         start_event = 'SILENCE_START'
                         stop_event = 'SILENCE_STOP'
 
-                        #update eegoffset + mstime values to be true to the split rectimes
-                        start_event_df = pd.DataFrame([[silence_l, int(silence_eegoffset), eegfile, int(silence_ms_start), int(silence_rec_start), start_event, 'nan']], columns = cols) 
+                        start_event_df = pd.DataFrame([[silence_list, int(silence_eegoffset), eegfile, int(silence_ms_start), int(silence_rec_start), start_event, 'nan']], columns = cols) 
                         start_df = pd.concat([start_df, start_event_df], axis=0)
 
-                        stop_event_df = pd.DataFrame([[silence_l ,int(silence_eegoffset_stop), eegfile, int(silence_ms_stop), int(silence_rec_stop), stop_event, 'nan']], columns = cols) 
+                        stop_event_df = pd.DataFrame([[silence_list ,int(silence_eegoffset_stop), eegfile, int(silence_ms_stop), int(silence_rec_stop), stop_event, 'nan']], columns = cols) 
                         stop_df = pd.concat([stop_df, stop_event_df], axis=0)
 
-                #get any period of silence that is less than the desired silence length x 2 
                 elif (silence_len * 2) > silence_rectime_len >= silence_len :
 
                     start_event = 'SILENCE_START'
                     stop_event = 'SILENCE_STOP'
 
-                    start_event_df = pd.DataFrame([[silence_l, int(silence_eegoffset), eegfile, int(silence_ms_start), int(silence_rec_start), start_event, 'nan']], columns = cols) 
+                    start_event_df = pd.DataFrame([[silence_list, int(silence_eegoffset), eegfile, int(silence_ms_start), int(silence_rec_start), start_event, 'nan']], columns = cols) 
                     start_df = pd.concat([start_df, start_event_df], axis=0)
 
-                    stop_event_df = pd.DataFrame([[silence_l, int(silence_eegoffset_stop), eegfile, int(silence_ms_stop), int(silence_rec_stop), stop_event, 'nan']], columns = cols) 
+                    stop_event_df = pd.DataFrame([[silence_list, int(silence_eegoffset_stop), eegfile, int(silence_ms_stop), int(silence_rec_stop), stop_event, 'nan']], columns = cols) 
                     stop_df = pd.concat([stop_df, stop_event_df], axis=0)
 
         for col in ['subject', 'session', 'experiment']:
@@ -297,32 +282,30 @@ class MatchedEvents():
                 idx = (np.abs(array - value)).argmin()
                 return array[idx]
 
-            n_lists = np.arange(1, n_lists+1)
-            none_target_lists = [n for n in n_lists if n != current_list]
+            all_lists = np.arange(1, n_lists+1)
+            other_lists = [n for n in all_lists if n != current_list]
 
-            #make it so it looks equal parts back and forward first 
-            #use np.random if it's below .5 look back if it's above look forward 
-
+            # random flip so equidistant lists are searched back or forward first equally often
             if np.random.rand() > 0.5:
-                none_target_lists = np.flip(none_target_lists)
+                other_lists = np.flip(other_lists)
 
             list_search_order = []
 
-            for x in range(len(none_target_lists)):
-                nearest_list = find_nearest(none_target_lists, current_list)
+            for _ in range(len(other_lists)):
+                nearest_list = find_nearest(other_lists, current_list)
                 list_search_order.append(nearest_list)
-                none_target_lists = [n for n in none_target_lists if n not in list_search_order]
+                other_lists = [n for n in other_lists if n not in list_search_order]
 
             list_search_order = np.asarray(list_search_order)
-            total_possible_lists = n_lists.shape[0] - 1
+            total_possible_lists = all_lists.shape[0] - 1
             total_found_lists = list_search_order.shape[0]
             assert total_possible_lists == total_found_lists, 'Total number of lists does not equal number of lists found'
 
             return list_search_order
 
-        big_match_list = []
+        matches_per_event = []
         
-        for i, choice_event in succ_events.iterrows():
+        for _, choice_event in succ_events.iterrows():
             
             beh_to_time_col = {'en': 'serialpos',
                    'rm': 'rectime',
@@ -331,46 +314,43 @@ class MatchedEvents():
             
             choice_time = choice_event[time_col]
 
-            # Look match rectimes that are within this Xms range.
             choice_list = choice_event['list']
             list_pick_order = find_adjacent_lists(choice_list) 
-            list_pick_order = [l for l in list_pick_order if abs(l-choice_list) < list_thres]
+            list_pick_order = [list_no for list_no in list_pick_order if abs(list_no-choice_list) < list_thres]
             
             beh_to_exact_match_distance = {'en': 0,
                                   'rm': 500,
                                   'ri': 500}
             exact_match_distance = beh_to_exact_match_distance[beh]
 
-            match_list = []
+            event_matches = []
 
-            for l in list_pick_order:
+            for list_no in list_pick_order:
 
-                list_unsucc_events = unsucc_events[unsucc_events['list'] == l]
+                list_unsucc_events = unsucc_events[unsucc_events['list'] == list_no]
                 if beh == 'rm':
                     list_unsucc_events = list_unsucc_events.query("type == 'SILENCE_STOP'")
 
-                #look for exact matches first 
+                # exact matches first
                 for unsucc_event_time in list_unsucc_events[time_col]:
 
                     if np.abs(choice_time - unsucc_event_time) <= exact_match_distance:
 
-                        match_list.append(int(list_unsucc_events[list_unsucc_events[time_col] == unsucc_event_time].index.values)) 
+                        event_matches.append(int(list_unsucc_events[list_unsucc_events[time_col] == unsucc_event_time].index.values)) 
 
-                #look for matches within buffer range 
                 for unsucc_event_time in list_unsucc_events[time_col]:
 
-                    if np.abs(choice_time - unsucc_event_time) <= proximity_buffer: #AMR 20240408
+                    if np.abs(choice_time - unsucc_event_time) <= proximity_buffer:
 
-                        if (idx := int(list_unsucc_events[list_unsucc_events[time_col] == unsucc_event_time].index.values)) not in match_list:
+                        if (idx := int(list_unsucc_events[list_unsucc_events[time_col] == unsucc_event_time].index.values)) not in event_matches:
 
-                            match_list.append(idx) #add the index of the SILENCE_START event corresponding to the match
-            big_match_list.append(match_list)
+                            event_matches.append(idx)
+            matches_per_event.append(event_matches)
 
-        succ_events['match_index'] = big_match_list
-        succ_events['num_match'] = [len(l) for l in big_match_list]
+        succ_events['match_index'] = matches_per_event
+        succ_events['num_match'] = [len(m) for m in matches_per_event]
         
-        # Code-issues #65: stable sort so silence-pair selection is
-        # reproducible when several events share the same num_match.
+        # stable sort: reproducible pair selection on num_match ties (code-issues #65)
         sorted_df = succ_events.query('num_match > 0').sort_values(
             by='num_match', ascending=True, kind='stable')
     
@@ -390,7 +370,7 @@ class MatchedEvents():
 
         matched_events = pd.DataFrame([], columns = list(unsucc_events.columns))
 
-        for x in range(time_matches.shape[0]):
+        for _ in range(time_matches.shape[0]):
 
             time_matches = time_matches[time_matches['num_match'] != 0]
             if len(time_matches) == 0:
@@ -405,7 +385,7 @@ class MatchedEvents():
             matched_events = pd.concat([matched_events, pd.DataFrame(current_event[unsucc_events.columns]).T], axis=0)
             matched_events = pd.concat([matched_events, pd.DataFrame(unsucc_events.loc[match_index]).T], axis=0) #silence stops
 
-            #remove the current matched silence event from all match_index fields and update the Len Matches for each recall event 
+            # drop the used match from every remaining event's candidates
             time_matches['match_index'] = time_matches.apply(lambda r: [m for m in r['match_index'] if m != match_index], axis=1)
             time_matches['num_match'] = time_matches.apply(lambda r: len(r['match_index']), axis=1)
             time_matches['matched'] = matched_count 

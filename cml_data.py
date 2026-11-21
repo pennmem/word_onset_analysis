@@ -97,8 +97,8 @@ def _s3_query(prefix, delimiter=None):
             query["delimiter"] = delimiter
         if token:
             query["continuation-token"] = token
-        with urllib.request.urlopen(f"{S3}?{urllib.parse.urlencode(query)}", timeout=120) as fh:
-            tree = ElementTree.fromstring(fh.read())
+        with urllib.request.urlopen(f"{S3}?{urllib.parse.urlencode(query)}", timeout=120) as resp:
+            tree = ElementTree.fromstring(resp.read())
         yield tree
         token = tree.findtext("s3:NextContinuationToken", namespaces=_NS)
         if not token:
@@ -107,8 +107,8 @@ def _s3_query(prefix, delimiter=None):
 
 def _s3_list(prefix):
     """[(key, size), ...] under `prefix`."""
-    return [(c.findtext("s3:Key", namespaces=_NS), int(c.findtext("s3:Size", default="0", namespaces=_NS)))
-            for tree in _s3_query(prefix) for c in tree.findall("s3:Contents", _NS)]
+    return [(obj.findtext("s3:Key", namespaces=_NS), int(obj.findtext("s3:Size", default="0", namespaces=_NS)))
+            for tree in _s3_query(prefix) for obj in tree.findall("s3:Contents", _NS)]
 
 
 def _human(n):
@@ -140,7 +140,7 @@ def _approve(todo, task):
     global _APPROVED
     if _APPROVED or os.environ.get("CML_AUTO_APPROVE") or not todo:
         return
-    total = _human(sum(s for _, s in todo))
+    total = _human(sum(size for _, size in todo))
     print(f"OpenNeuro {dataset_of(task)} ({task}): {len(todo)} file(s), {total} to download -> {cache_dir() / dataset_of(task)}")
     answer = _prompt(f"Download {total}? (approving once covers this whole run) [y/N]: ", "n")
     if answer is None:
@@ -156,8 +156,8 @@ def available_subjects(task):
     """Subject labels in the dataset hosting `task`."""
     ds = dataset_of(task)
     subs = [m.group(1) for tree in _s3_query(f"{ds}/", delimiter="/")
-            for cp in tree.findall("s3:CommonPrefixes", _NS)
-            if (m := re.fullmatch(rf"{ds}/sub-([^/]+)/", cp.findtext("s3:Prefix", default="", namespaces=_NS)))]
+            for common_prefix in tree.findall("s3:CommonPrefixes", _NS)
+            if (m := re.fullmatch(rf"{ds}/sub-([^/]+)/", common_prefix.findtext("s3:Prefix", default="", namespaces=_NS)))]
     return sorted(subs)
 
 
@@ -173,12 +173,12 @@ def session_dataframe(task):
     would only see what has been downloaded so far)."""
     import pandas as pd
     task = _canonical_task(task)
-    pat = re.compile(rf"sub-([^/_]+)/ses-([^/_]+)/.*task-{task}", re.IGNORECASE)
-    if os.environ.get("CML_DATA_SOURCE", "").lower() == "local":         # scan the (complete) local copy
+    sub_ses_pattern = re.compile(rf"sub-([^/_]+)/ses-([^/_]+)/.*task-{task}", re.IGNORECASE)
+    if os.environ.get("CML_DATA_SOURCE", "").lower() == "local":         # the local copy is complete
         keys = [str(f.relative_to(cache_dir() / dataset_of(task))) for f in (cache_dir() / dataset_of(task)).rglob("*_beh.tsv")]
     else:
         keys = [k for k, _ in _s3_list(f"{dataset_of(task)}/")]
-    pairs = sorted({(m.group(1), m.group(2)) for k in keys if (m := pat.search(k))})
+    pairs = sorted({(m.group(1), m.group(2)) for k in keys if (m := sub_ses_pattern.search(k))})
     return pd.DataFrame(pairs, columns=["subject", "session"]).assign(task=task)
 
 
@@ -198,13 +198,13 @@ def plan_download(task, subject=None, session=None, include_timeseries=False, ac
     for sub in subjects:
         sub = str(sub).replace("sub-", "")
         prefixes = [f"{ds}/sub-{sub}/ses-{str(s).replace('ses-', '')}/" for s in sessions] if sessions else [f"{ds}/sub-{sub}/"]
-        keys = [kv for p in prefixes for kv in _s3_list(p)]
-        if not keys:
+        listing = [kv for prefix in prefixes for kv in _s3_list(prefix)]
+        if not listing:
             raise FileNotFoundError(f"no files for subject {sub!r} in {ds} ({task}); see available_subjects({task!r})")
-        for key, size in keys:
+        for key, size in listing:
             name = key.split("/")[-1]
-            m = re.search(r"task-([A-Za-z0-9]+)", name)
-            if m and m.group(1) != task and task != "PEERS":      # files with no task label (electrodes.tsv) are kept
+            task_match = re.search(r"task-([A-Za-z0-9]+)", name)
+            if task_match and task_match.group(1) != task and task != "PEERS":      # files with no task label (electrodes.tsv) are kept
                 continue
             if datatype and f"/{datatype}/" not in key:
                 continue
@@ -273,15 +273,15 @@ def get_bids_root(task, subject=None, session=None, include_timeseries=False, ac
 
 if __name__ == "__main__":
     import argparse
-    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("task")
-    p.add_argument("--subject", "-s", nargs="*")
-    p.add_argument("--session", nargs="*")
-    p.add_argument("--eeg", action="store_true", help="also download the recordings")
-    p.add_argument("--acq", choices=["bipolar", "monopolar"])
-    p.add_argument("--list-subjects", action="store_true")
-    a = p.parse_args()
-    if a.list_subjects:
-        print(", ".join(available_subjects(a.task)))
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("task")
+    parser.add_argument("--subject", "-s", nargs="*")
+    parser.add_argument("--session", nargs="*")
+    parser.add_argument("--eeg", action="store_true", help="also download the recordings")
+    parser.add_argument("--acq", choices=["bipolar", "monopolar"])
+    parser.add_argument("--list-subjects", action="store_true")
+    args = parser.parse_args()
+    if args.list_subjects:
+        print(", ".join(available_subjects(args.task)))
     else:
-        print(prefetch(a.task, a.subject, a.session, include_timeseries=a.eeg, acquisition=a.acq))
+        print(prefetch(args.task, args.subject, args.session, include_timeseries=args.eeg, acquisition=args.acq))

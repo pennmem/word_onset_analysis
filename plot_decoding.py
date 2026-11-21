@@ -53,46 +53,47 @@ def session_features(p: dict, lobe_of: dict) -> pd.DataFrame:
     recalled, session, list (NaN when trials don't match the events)."""
     roi = fc.roi_of_reg_full(p["reg_full"], lobe_of)
     x, t = response(p)
-    f = pd.DataFrame({f"{r.split('-', 1)[1]}|{lab}|{a}": x[:, c, (t >= a) & (t < a + WIN_MS)].mean(1)
-                      for c, (r, lab) in enumerate(zip(roi, p["labels"])) if r is not None for a in WINDOWS})
-    f = (f - f.mean()) / f.std()
-    w = fc.load_events(fc.dfrow_from_sid(p["sid"]), BEH)
-    w = w[np.asarray(w.attrs["mask"], bool)]   # word-on events, in the stored trial order
-    f["recalled"], f["session"] = p["recalled_hi"], str(p["sid"])
-    f["list"] = w["trial"].to_numpy(float) if len(w) == len(f) else np.nan
-    return f
+    feats = pd.DataFrame({f"{r.split('-', 1)[1]}|{label}|{start}": x[:, c, (t >= start) & (t < start + WIN_MS)].mean(1)
+                          for c, (r, label) in enumerate(zip(roi, p["labels"])) if r is not None for start in WINDOWS})
+    feats = (feats - feats.mean()) / feats.std()
+    events = fc.load_events(fc.dfrow_from_sid(p["sid"]), BEH)
+    events = events[np.asarray(events.attrs["mask"], bool)]   # word-on events, in the stored trial order
+    feats["recalled"], feats["session"] = p["recalled_hi"], str(p["sid"])
+    feats["list"] = events["trial"].to_numpy(float) if len(events) == len(feats) else np.nan
+    return feats
 
 
 def fit_path(X: np.ndarray, y: np.ndarray, tol: float = 1e-8) -> np.ndarray:
     """(features + intercept, len(CS)) weights of sklearn's LogisticRegression(C, class_weight="balanced")
     for each C in CS: damped Newton, warm-started along the path (strong -> weak penalty)."""
-    n, n1 = len(y), y.sum(); S = np.where(y, n / (2 * n1), n / (2 * (n - n1)))
+    n, n_pos = len(y), y.sum(); class_w = np.where(y, n / (2 * n_pos), n / (2 * (n - n_pos)))
     X1 = np.c_[X, np.ones(n)]
-    def loss(th, r):
-        z = X1 @ th
-        return (S * (np.logaddexp(0, z) - y * z)).sum() + 0.5 * (r * th ** 2).sum()
-    th, out = np.zeros(X1.shape[1]), []
+    def loss(theta, penalty):
+        z = X1 @ theta
+        return (class_w * (np.logaddexp(0, z) - y * z)).sum() + 0.5 * (penalty * theta ** 2).sum()
+    theta, out = np.zeros(X1.shape[1]), []
     for c in CS:
-        r = np.r_[np.full(X.shape[1], 1 / c), 0.0]   # L2 on the weights, not the intercept
+        penalty = np.r_[np.full(X.shape[1], 1 / c), 0.0]   # L2 on the weights, not the intercept
         for it in range(100):
-            q = special.expit(X1 @ th)
-            step = solve((X1.T * (S * q * (1 - q))) @ X1 + np.diag(r), X1.T @ (S * (q - y)) + r * th, assume_a="pos")
-            f0, k = loss(th, r), 1.0
-            while loss(th - k * step, r) > f0 and k > 1e-4:   # halve the step if the loss rises
-                k /= 2
-            th = th - k * step
-            if np.abs(k * step).max() < tol:
+            prob = special.expit(X1 @ theta)
+            step = solve((X1.T * (class_w * prob * (1 - prob))) @ X1 + np.diag(penalty),
+                         X1.T @ (class_w * (prob - y)) + penalty * theta, assume_a="pos")
+            loss0, frac = loss(theta, penalty), 1.0
+            while loss(theta - frac * step, penalty) > loss0 and frac > 1e-4:
+                frac /= 2
+            theta = theta - frac * step
+            if np.abs(frac * step).max() < tol:
                 break
-        out.append(th)
+        out.append(theta)
         if it == 0:   # unchanged from the previous C: the penalty no longer matters, nor will it
             break
-    return np.column_stack(out + [th] * (len(CS) - len(out)))
+    return np.column_stack(out + [theta] * (len(CS) - len(out)))
 
 
 def session_auc(score: np.ndarray, y: np.ndarray) -> np.ndarray:
     """AUC of each column of score (one held-out session)."""
-    rk, n1 = rankdata(score, axis=0), y.sum()
-    return ((rk * y[:, None]).sum(0) - n1 * (n1 + 1) / 2) / (n1 * (len(y) - n1))
+    ranks, n_pos = rankdata(score, axis=0), y.sum()
+    return ((ranks * y[:, None]).sum(0) - n_pos * (n_pos + 1) / 2) / (n_pos * (len(y) - n_pos))
 
 
 def loso(X: np.ndarray, y: np.ndarray, sess: np.ndarray) -> list:
@@ -110,32 +111,32 @@ def auc(d: pd.DataFrame, cols: list[str], y: np.ndarray, sess: np.ndarray) -> fl
     X, out = d[cols].fillna(0).to_numpy(), []
     for te, score in loso(X, y, sess):
         tr = np.setdiff1d(np.arange(len(y)), te)
-        inner = [session_auc(s, y[tr][i]) for i, s in loso(X[tr], y[tr], sess[tr])]
+        inner = [session_auc(inner_score, y[tr][inner_te]) for inner_te, inner_score in loso(X[tr], y[tr], sess[tr])]
         out.append(session_auc(score[:, [np.argmax(np.mean(inner, 0))]], y[te])[0])
     return float(np.mean(out))
 
 
 def decode_subject(sub: str, fs: list) -> list:
     """Per lobe x window AUCs for one subject (mean over montages)."""
-    mont: dict[frozenset, list] = {}
+    montages: dict[frozenset, list] = {}
     for f in fs:
-        mont.setdefault(frozenset(f.columns), []).append(f)
-    tres = []
-    for m in mont.values():
-        d = pd.concat(m, ignore_index=True).dropna(subset=["recalled"])
+        montages.setdefault(frozenset(f.columns), []).append(f)
+    rows = []
+    for sessions in montages.values():
+        d = pd.concat(sessions, ignore_index=True).dropna(subset=["recalled"])
         y = d["recalled"].to_numpy(int)
         sess = d["session"].to_numpy()
         if min(y.sum(), len(y) - y.sum()) < MIN_TRIALS or len(set(sess)) < MIN_SESSIONS:
             continue
         for lobe in fc.LOBES:
-            for a in WINDOWS:
-                cols = [c for c in d.columns if c.startswith(f"{lobe}|") and c.endswith(f"|{a}")]
+            for start in WINDOWS:
+                cols = [c for c in d.columns if c.startswith(f"{lobe}|") and c.endswith(f"|{start}")]
                 if len(cols) >= MIN_ELECTRODES:
-                    tres.append({"sub": sub, "lobe": lobe, "window_ms": a, "n_electrodes": len(cols),
+                    rows.append({"sub": sub, "lobe": lobe, "window_ms": start, "n_electrodes": len(cols),
                                  "auc": auc(d, cols, y, sess)})
-    if not tres:
+    if not rows:
         return []
-    return pd.DataFrame(tres).groupby(["sub", "lobe", "window_ms"], as_index=False).mean().to_dict("records")
+    return pd.DataFrame(rows).groupby(["sub", "lobe", "window_ms"], as_index=False).mean().to_dict("records")
 
 
 def main() -> None:
@@ -143,7 +144,7 @@ def main() -> None:
         "--from-csv": dict(action="store_true", help="redraw from the saved per-subject CSV (no decoding)")})
     stem = join(args.out_dir, f"recall_auc_time_{BEH}")
     if args.from_csv:
-        tres = pd.read_csv(fc.table_path(f"{stem}_per_subject.csv"))
+        per_subject = pd.read_csv(fc.table_path(f"{stem}_per_subject.csv"))
     else:
         lobe_of = fc.load_burke_maps()
         subs: dict[str, list] = {}
@@ -151,28 +152,29 @@ def main() -> None:
                       desc="sessions"):
             p = fc.load_pickle(str(f))
             subs.setdefault(str(p["sid"][0]), []).append(session_features(p, lobe_of))
-        out = Parallel(n_jobs=max(1, os.cpu_count() // 2))(
+        sub_rows = Parallel(n_jobs=max(1, os.cpu_count() // 2))(
             delayed(decode_subject)(sub, fs) for sub, fs in tqdm(subs.items(), desc="subjects"))
-        tres = pd.DataFrame([t for r in out for t in r])
+        per_subject = pd.DataFrame([row for rows in sub_rows for row in rows])
         os.makedirs(args.out_dir, exist_ok=True)
-        tres.to_csv(fc.table_path(f"{stem}_per_subject.csv"), index=False)
+        per_subject.to_csv(fc.table_path(f"{stem}_per_subject.csv"), index=False)
 
-    g = tres.groupby(["lobe", "window_ms"])
-    st = g["auc"].agg(["mean", "sem", "size"]).reset_index()
-    st["null"] = CHANCE   # kept for plot_sim_summary.py
-    st["p"] = [ttest_1samp(x["auc"], CHANCE, alternative="greater").pvalue for _, x in g]
-    st["q"] = multipletests(st["p"], method="fdr_bh")[1]
-    st.to_csv(fc.table_path(f"{stem}_stats.csv"), index=False)
+    by_cell = per_subject.groupby(["lobe", "window_ms"])
+    stats = by_cell["auc"].agg(["mean", "sem", "size"]).reset_index()
+    stats["null"] = CHANCE   # kept for plot_sim_summary.py
+    stats["p"] = [ttest_1samp(cell["auc"], CHANCE, alternative="greater").pvalue for _, cell in by_cell]
+    stats["q"] = multipletests(stats["p"], method="fdr_bh")[1]
+    stats.to_csv(fc.table_path(f"{stem}_stats.csv"), index=False)
     fig, axes = plt.subplots(2, 3, figsize=(11, 6), sharex=True, sharey=True)
     for lobe, ax in zip(fc.LOBES, axes.flat):
-        s = st[st["lobe"] == lobe]
-        x, col = s["window_ms"] + WIN_MS / 2, fc.LOBE_COLORS[lobe]
-        ax.fill_between(x, s["mean"] - s["sem"], s["mean"] + s["sem"], color=col, alpha=0.3, lw=0)
-        ax.plot(x, s["mean"], "o-", color=col, lw=2, ms=4)
-        sig = s["q"] < 0.05
-        ax.plot(x[sig], (s["mean"] + s["sem"])[sig] + 0.004, "*", color=col, ms=8)
-        ax.plot(x, s["null"], color="black", ls="--", lw=1)   # chance level
-        ax.set_title(f"{lobe.capitalize()} (n={int(s['size'].max())})", fontsize=12, color=col)
+        lobe_stats = stats[stats["lobe"] == lobe]
+        x, color = lobe_stats["window_ms"] + WIN_MS / 2, fc.LOBE_COLORS[lobe]
+        ax.fill_between(x, lobe_stats["mean"] - lobe_stats["sem"], lobe_stats["mean"] + lobe_stats["sem"],
+                        color=color, alpha=0.3, lw=0)
+        ax.plot(x, lobe_stats["mean"], "o-", color=color, lw=2, ms=4)
+        sig = lobe_stats["q"] < 0.05
+        ax.plot(x[sig], (lobe_stats["mean"] + lobe_stats["sem"])[sig] + 0.004, "*", color=color, ms=8)
+        ax.plot(x, lobe_stats["null"], color="black", ls="--", lw=1)
+        ax.set_title(f"{lobe.capitalize()} (n={int(lobe_stats['size'].max())})", fontsize=12, color=color)
         ax.spines[["top", "right"]].set_visible(False)
     fig.supxlabel("Time after word onset (ms)", fontsize=13)
     fig.supylabel("Recall AUC", fontsize=13)
@@ -180,8 +182,8 @@ def main() -> None:
     fig.savefig(f"{stem}.png", dpi=300)
     fig.savefig(f"{stem}.pdf")
     plt.close(fig)
-    print(f"[decoding] {tres['sub'].nunique()} subjects; "
-          f"{int((st['q'] < 0.05).sum())} of {len(st)} lobe x window cells AUC > 0.5 at q < .05")
+    print(f"[decoding] {per_subject['sub'].nunique()} subjects; "
+          f"{int((stats['q'] < 0.05).sum())} of {len(stats)} lobe x window cells AUC > 0.5 at q < .05")
     print(f"[saved] {stem}.png")
 
 

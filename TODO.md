@@ -1,6 +1,14 @@
 # On hold / to do
 
 ## On hold
+- **50 Hz harmonic notches (2026-11-20).** `helper.notch_filter` notches 100 and 150 Hz (50 Hz-mains harmonics,
+  for Freiburg sites) in every subject, but none of the 361 analysed subjects is from Freiburg: all are 60 Hz US
+  sites. Removes 4 Hz at the centre of the 70-150 Hz band for nothing. Fix (60 Hz family only) at the next recompute.
+- **ISI design per session (Riley, 2026-11-19).** 148 of 931 sessions labelled 750-1000 ms (48 subjects,
+  R1275D-R1425D, catFR1/FR1; 8 subjects have both kinds) have ISIs spread evenly over ~780-1180 ms, a design,
+  not stray pauses (only 1 word in all data > 1300 ms, 5.3 s). Session-median splits (3A-C) are unaffected; the
+  `blank` mixed model's `hi + 40` cut drops ~1/3 of these sessions' words; paper methods say 750-1000. Decide:
+  relabel design per session (observed range) and fix the methods text; check the task build / Riley.
 - Done (2026-10-21): region labels for depth contacts without a volumetric label now come from
   Riley's imaging-label database (recover_labels.py, copied to <scratch>/imaging_label_recovery;
   white matter / ventricles stay unlabelled); the MNI-neighbour labels only fill pairs the

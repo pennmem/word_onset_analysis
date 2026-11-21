@@ -22,13 +22,11 @@ def get_dfrow(dfrow: Sequence[Any] | NDArrayAny) -> pd.Series:
 
 
 def load_pickle(path: str) -> Any:
-    """Load any pickle file. Return type is genuinely Any (caller-known)."""
     with open(path, 'rb') as f:
         return pickle.load(f)
 
 
 def save_pickle(path: str, obj: Any) -> None:
-    """Pickle obj to path (binary, default protocol)."""
     with open(path, 'wb') as f:
         pickle.dump(obj, f)
 

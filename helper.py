@@ -1,14 +1,10 @@
 """helper.py — core IO / signal-processing / FC-orchestration toolkit.
 
-The widest-reach module in the repo. Reads BIDS events + EEG (OpenNeuro via
-cml_data + bidsreader), resamples + notch-filters, builds bipolar pairs,
-time-bins, and regionalizes electrodes.
+Reads BIDS events + EEG (OpenNeuro via cml_data + bidsreader), resamples +
+notch-filters, builds bipolar pairs, time-bins, and regionalizes electrodes.
 
-This file is dominated by pandas method chains + ptsa + bidsreader +
-mne_connectivity + matplotlib pyplot calls — third-party stubs are weak
-across all of them. Narrow `reportUnknownMemberType` and friends to warning
-at the file level so the strict-mode signal we DO want (missing annotations,
-unbound vars, real type drift across our own functions) still surfaces.
+Third-party stubs are weak, so the unknown-type pyright rules are narrowed to
+warnings; the other strict-mode rules stay on.
 """
 # pyright: reportUnknownMemberType=warning, reportUnknownArgumentType=warning, reportUnknownVariableType=warning, reportAttributeAccessIssue=warning, reportConstantRedefinition=warning
 from __future__ import annotations
@@ -34,13 +30,9 @@ from misc import ftag
 
 NDArrayAny = npt.NDArray[Any]
 
-# Module-level `root_dir` is set by callers (prepare_sessions, build_subj_mat,
-# load_events) immediately after import: `helper.root_dir = str(SCRATCH_DIR)`
-# where SCRATCH_DIR comes from project_paths. Do NOT initialize it here —
-# `from helper import *` in fc_comparison_functions would then shadow that
-# module's local `root_dir = str(SCRATCH_DIR)` with the default value,
-# silently routing FC compute to an empty path. Declare it via TYPE_CHECKING
-# only so static-checkers see the attribute without creating a runtime symbol.
+# `root_dir` is set by callers right after import (`helper.root_dir = str(SCRATCH_DIR)`).
+# Do NOT initialize it here: `from helper import *` in fc_comparison_functions
+# would shadow that module's own root_dir and route FC compute to an empty path.
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     root_dir: str  # type: ignore[no-redef]
@@ -104,9 +96,7 @@ def prefetch_bids(dfrows: Sequence[pd.Series], eeg: bool = True) -> None:
 
 # Bipolar pairs are the analysis channels; longetal: monopolar contacts + common average reference.
 BIDS_ACQUISITION: str = LONGETAL['acquisition'] if LONGETAL else 'bipolar'
-# BIDS electrode `description` -> the single-letter electrode type the
-# regionalization cascade keys on (volumetric atlases for depths, surface for
-# grid/strip).
+# BIDS electrode `description` -> the electrode type the regionalization cascade keys on.
 _BIDS_ELECTRODE_TYPE = {'depth': 'D', 'grid': 'G', 'strip': 'S'}
 
 
@@ -126,56 +116,55 @@ def load_pairs_table(reader: Any) -> pd.DataFrame:
     """
     if BIDS_ACQUISITION == 'bipolar':   # bidsreader keeps only wb/ind/stein labels by default
         from bidsreader.src.helpers import combine_bipolar_electrodes
-        t = combine_bipolar_electrodes(reader.load_channels('bipolar'), reader.load_electrodes(),
-                                       region_cols=('stein.region', 'das.region', 'wb.region',
-                                                    'ind.region', 'region1'), space=reader.space)
+        channels = combine_bipolar_electrodes(reader.load_channels('bipolar'), reader.load_electrodes(),
+                                              region_cols=('stein.region', 'das.region', 'wb.region',
+                                                           'ind.region', 'region1'), space=reader.space)
     else:
-        t = reader.load_combined_channels(acquisition=BIDS_ACQUISITION)
+        channels = reader.load_combined_channels(acquisition=BIDS_ACQUISITION)
     if BIDS_ACQUISITION == 'monopolar':   # contacts are the channels: give each the pair schema
-        t = t[t['type'].isin(['ECOG', 'SEEG'])].reset_index(drop=True)   # no scalp/EKG channels
-        cols = [c for c in ('x', 'y', 'z', 'stein.region', 'wb.region', 'ind.region') if c in t]
-        single = lambda d: d.assign(ch1=d['name'], ch2=d['name'],
-                                    **{f'{c}_{s}': d[c] for c in cols for s in ('ch1', 'ch2', 'mid')})
-        dep = t['description'].astype(str).str.lower().eq('depth')
-        if LONGETAL.get('depth_reference') == 'bipolar' and dep.any():   # depths: adjacent contacts on a lead
-            d = t[dep].assign(_n=pd.to_numeric(t['name'].str.extract(r'(\d+)$')[0], errors='coerce'))
-            d = d.sort_values(['group', '_n'])
-            nx = d.groupby('group').shift(-1)
-            ok = (nx['_n'] == d['_n'] + 1).to_numpy()
-            a, b = d[ok].reset_index(drop=True), nx[ok].reset_index(drop=True)
-            bip = a.assign(name=a['name'] + '-' + b['name'], ch1=a['name'], ch2=b['name'],
-                           **{f'{c}_ch1': a[c] for c in cols}, **{f'{c}_ch2': b[c] for c in cols},
-                           **{f'{c}_mid': (pd.to_numeric(a[c], errors='coerce') + pd.to_numeric(b[c], errors='coerce')) / 2
-                              for c in ('x', 'y', 'z')})
-            t = pd.concat([single(t[~dep]), bip.drop(columns='_n')], ignore_index=True)
+        channels = channels[channels['type'].isin(['ECOG', 'SEEG'])].reset_index(drop=True)   # no scalp/EKG channels
+        contact_cols = [c for c in ('x', 'y', 'z', 'stein.region', 'wb.region', 'ind.region') if c in channels]
+        as_single_contact = lambda df: df.assign(ch1=df['name'], ch2=df['name'],
+                                                 **{f'{c}_{s}': df[c] for c in contact_cols for s in ('ch1', 'ch2', 'mid')})
+        is_depth = channels['description'].astype(str).str.lower().eq('depth')
+        if LONGETAL.get('depth_reference') == 'bipolar' and is_depth.any():   # depths: adjacent contacts on a lead
+            depths = channels[is_depth].assign(_n=pd.to_numeric(channels['name'].str.extract(r'(\d+)$')[0], errors='coerce'))
+            depths = depths.sort_values(['group', '_n'])
+            next_contact = depths.groupby('group').shift(-1)
+            adjacent = (next_contact['_n'] == depths['_n'] + 1).to_numpy()
+            first, second = depths[adjacent].reset_index(drop=True), next_contact[adjacent].reset_index(drop=True)
+            depth_bipolar = first.assign(name=first['name'] + '-' + second['name'], ch1=first['name'], ch2=second['name'],
+                                         **{f'{c}_ch1': first[c] for c in contact_cols}, **{f'{c}_ch2': second[c] for c in contact_cols},
+                                         **{f'{c}_mid': (pd.to_numeric(first[c], errors='coerce') + pd.to_numeric(second[c], errors='coerce')) / 2
+                                            for c in ('x', 'y', 'z')})
+            channels = pd.concat([as_single_contact(channels[~is_depth]), depth_bipolar.drop(columns='_n')], ignore_index=True)
         else:
-            t = single(t)
+            channels = as_single_contact(channels)
     pairs = pd.DataFrame({
-        'label': t['name'].astype(str),
-        'contact_label_1': t['ch1'].astype(str),
-        'contact_label_2': t['ch2'].astype(str),
+        'label': channels['name'].astype(str),
+        'contact_label_1': channels['ch1'].astype(str),
+        'contact_label_2': channels['ch2'].astype(str),
     })
-    etype = t['description'].astype(str).str.lower().map(_BIDS_ELECTRODE_TYPE)
-    pairs['type_1'] = pairs['type_2'] = etype.fillna('nan')
-    for ax in 'xyz':   # MNI; pyFR tables are in Talairach space with separate mni.* columns
-        mid = f'mni.{ax}_mid' if f'mni.{ax}_mid' in t else f'{ax}_mid'
-        pairs[f'mni.{ax}'] = pd.to_numeric(t[mid], errors='coerce')
-    c1 = t[['x_ch1', 'y_ch1', 'z_ch1']].apply(pd.to_numeric, errors='coerce').to_numpy(float)
-    c2 = t[['x_ch2', 'y_ch2', 'z_ch2']].apply(pd.to_numeric, errors='coerce').to_numpy(float)
-    dist = np.linalg.norm(c1 - c2, axis=1)
+    electrode_type = channels['description'].astype(str).str.lower().map(_BIDS_ELECTRODE_TYPE)
+    pairs['type_1'] = pairs['type_2'] = electrode_type.fillna('nan')
+    for axis in 'xyz':   # MNI; pyFR tables are in Talairach space with separate mni.* columns
+        mid_col = f'mni.{axis}_mid' if f'mni.{axis}_mid' in channels else f'{axis}_mid'
+        pairs[f'mni.{axis}'] = pd.to_numeric(channels[mid_col], errors='coerce')
+    xyz_1 = channels[['x_ch1', 'y_ch1', 'z_ch1']].apply(pd.to_numeric, errors='coerce').to_numpy(float)
+    xyz_2 = channels[['x_ch2', 'y_ch2', 'z_ch2']].apply(pd.to_numeric, errors='coerce').to_numpy(float)
+    dist = np.linalg.norm(xyz_1 - xyz_2, axis=1)
     if BIDS_ACQUISITION == 'monopolar':   # single contacts 0; depth pairs missing coordinates kept (not NaN)
         dist = np.where(pairs['contact_label_1'] == pairs['contact_label_2'], 0.0, np.nan_to_num(dist))
     pairs['distance'] = dist
-    # BIDS column -> pairs atlas column; pyFR's Talairach label (region1) is
-    # riley-thesis's mat.tal.region
+    # pyFR's Talairach label (region1) is riley-thesis's mat.tal.region
     for atlas, col in (('stein.region', 'stein.region'), ('das.region', 'das.region'),
                        ('wb.region', 'wb.region'), ('ind.region', 'ind.region'),
                        ('mat.tal.region', 'region1')):
-        a = t.get(f'{col}_ch1', pd.Series(np.nan, index=t.index)).replace('n/a', np.nan)
-        b = t.get(f'{col}_ch2', pd.Series(np.nan, index=t.index)).replace('n/a', np.nan)
-        pairs[atlas] = a.fillna(b).fillna('nan').astype(str)
-    x = pairs['mni.x']
-    pairs['hemisphere'] = np.where(x < 0, 'L', np.where(x > 0, 'R', 'nan'))
+        label_1 = channels.get(f'{col}_ch1', pd.Series(np.nan, index=channels.index)).replace('n/a', np.nan)
+        label_2 = channels.get(f'{col}_ch2', pd.Series(np.nan, index=channels.index)).replace('n/a', np.nan)
+        pairs[atlas] = label_1.fillna(label_2).fillna('nan').astype(str)
+    mni_x = pairs['mni.x']
+    pairs['hemisphere'] = np.where(mni_x < 0, 'L', np.where(mni_x > 0, 'R', 'nan'))
     return pairs
 
 
@@ -222,42 +211,41 @@ def get_eeg(
     raw = bids_reader(dfrow).load_raw(acquisition=BIDS_ACQUISITION)
     pairs = get_pairs(dfrow)
     labels = list(pairs['label'].astype(str))
-    chans = labels
+    channels = labels
     if BIDS_ACQUISITION == 'monopolar':   # longetal: channels are contacts or contact differences
-        c1, c2 = list(pairs['contact_label_1'].astype(str)), list(pairs['contact_label_2'].astype(str))
-        chans = list(dict.fromkeys(c1 + c2))
-        i1, i2 = [chans.index(c) for c in c1], [chans.index(c) for c in c2]
-        single = np.array(i1) == np.array(i2)
-    missing = sorted(set(chans) - set(raw.ch_names))
+        contacts_1, contacts_2 = list(pairs['contact_label_1'].astype(str)), list(pairs['contact_label_2'].astype(str))
+        channels = list(dict.fromkeys(contacts_1 + contacts_2))
+        idx_1, idx_2 = [channels.index(c) for c in contacts_1], [channels.index(c) for c in contacts_2]
+        is_single_contact = np.array(idx_1) == np.array(idx_2)
+    missing = sorted(set(channels) - set(raw.ch_names))
     if missing:
         raise ValueError(f'{ftag(dfrow)}: pairs.json channels absent from the recording: {missing}')
-    raw.pick(chans)                                    # also orders the channels
+    raw.pick(channels)                                 # also orders the channels
     sr = float(raw.info['sfreq'])
     samples = events['eegoffset'].to_numpy(dtype=int)
     # Epoch each distinct onset once (MNE refuses repeated samples), then expand
     # back: the same onset can appear twice, e.g. WORD + its PRE_WORD copy.
-    uniq, inverse = np.unique(samples, return_inverse=True)
-    # Keep only onsets whose whole clip is inside the recording: MNE raises (not
-    # drops) when a clip starts past the end, e.g. truncated OpenNeuro EDFs.
-    inside = np.flatnonzero((uniq + round(start * sr / 1000) >= 0) &
-                            (uniq + round(end * sr / 1000) < raw.n_times))
+    unique_samples, unique_idx_of_event = np.unique(samples, return_inverse=True)
+    # MNE raises (not drops) when a clip starts past the end, e.g. truncated OpenNeuro EDFs.
+    inside = np.flatnonzero((unique_samples + round(start * sr / 1000) >= 0) &
+                            (unique_samples + round(end * sr / 1000) < raw.n_times))
     if not len(inside):
         raise ValueError(f'{ftag(dfrow)}: no event clip lies inside the recording')
-    mne_events = np.column_stack([uniq[inside], np.zeros(len(inside), int), np.ones(len(inside), int)])
+    mne_events = np.column_stack([unique_samples[inside], np.zeros(len(inside), int), np.ones(len(inside), int)])
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         epochs = mne.Epochs(raw, mne_events, tmin=start / 1000.0, tmax=end / 1000.0,
                             baseline=None, preload=True, verbose=False)
-    row_of = {inside[s]: i for i, s in enumerate(epochs.selection)}   # uniq index -> epoch row
-    kept = np.array([i for i, u in enumerate(inverse) if u in row_of], dtype=int)
+    epoch_row_of = {inside[s]: i for i, s in enumerate(epochs.selection)}
+    kept = np.array([i for i, u in enumerate(unique_idx_of_event) if u in epoch_row_of], dtype=int)
     if len(kept) < len(samples):
         print(f'[{ftag(dfrow)}] {len(samples) - len(kept)} of {len(samples)} events dropped '
               f'(clip runs off the recording)')
     mask = mask[kept]
-    # MNE reads volts; the pipeline has always worked in microvolts.
-    data = epochs.get_data()[[row_of[inverse[i]] for i in kept]] * 1e6
+    # MNE reads volts; the pipeline works in microvolts.
+    data = epochs.get_data()[[epoch_row_of[unique_idx_of_event[i]] for i in kept]] * 1e6
     if BIDS_ACQUISITION == 'monopolar':
-        data = np.where(single[None, :, None], data[:, i1], data[:, i1] - data[:, i2])
+        data = np.where(is_single_contact[None, :, None], data[:, idx_1], data[:, idx_1] - data[:, idx_2])
     eeg = TimeSeries.create(data, sr, dims=('event', 'channel', 'time'),
                             coords={'event': events.index.to_numpy()[kept],   # position in the input events
                                     'channel': labels,
@@ -270,9 +258,9 @@ def get_eeg(
         from simulate_eeg import replace_w_simulated_EEG
         eeg = replace_w_simulated_EEG(eeg, dfrow, mask, simulation_tag, events)
     if BIDS_ACQUISITION == 'monopolar':   # common average reference, per sample, over the single contacts
-        x = np.asarray(eeg.data, float).copy()
-        x[:, single] -= x[:, single].mean(axis=1, keepdims=True)
-        eeg = eeg.copy(data=x)
+        referenced = np.asarray(eeg.data, float).copy()
+        referenced[:, is_single_contact] -= referenced[:, is_single_contact].mean(axis=1, keepdims=True)
+        eeg = eeg.copy(data=referenced)
     
     return eeg, mask
 
@@ -309,8 +297,7 @@ def notch_filter(
         sub : str
             Subject code. Used to decide notch filter frequency: if a German (Freiburg) subject, filter at 50 Hz, else at 60 Hz.
         harmonics_up_to_hz : float or None
-            None (default) notches ONLY the fundamental -- the historical
-            behaviour, bit-identical to the pre-high-gamma pipeline. A float
+            None (default) notches ONLY the fundamental. A float
             additionally notches every integer harmonic of the fundamental up to
             that frequency, each with the same +/-2 Hz stopband.
 
@@ -335,31 +322,21 @@ def notch_filter(
 
     if harmonics_up_to_hz is not None:
         nyquist = float(eeg.samplerate) / 2.0
-        # SITE-UNIFORM: notch the UNION of BOTH mains standards' harmonics for
-        # every subject, not just this subject's own fundamental.
-        #
-        # Per-site notching would give subjects different effective passbands --
-        # a Freiburg (50 Hz) subject loses 100 and 150 Hz, a US (60 Hz) subject
-        # loses 120 Hz. In high_gamma [70,150] that is 10% vs 5% of the band,
-        # and the German hole sits at the band CENTRE. Averaging such subjects
-        # would mean averaging over different frequency content, so any apparent
-        # site difference in a group result could be a filtering artifact.
-        #
-        # The union costs 15% of the band for everyone instead, but every
-        # subject then contributes an identical passband. Uniform loss you can
-        # state in one Methods sentence beats a per-site confound.
+        # Union of BOTH mains standards' harmonics for every subject: per-site
+        # notching would give sites different passbands (a site confound in
+        # group results); the union costs 15% of high_gamma for everyone instead.
         harmonics = sorted({
             f * k
             for f in (50., 60.)
             for k in range(2, int(harmonics_up_to_hz // f) + 1)
         })
-        for f_k in harmonics:
+        for harmonic in harmonics:
             # A stopband reaching Nyquist cannot be fit; the rest are higher.
-            if f_k + 2. >= nyquist:
+            if harmonic + 2. >= nyquist:
                 break
-            hb = ButterworthFilter(freq_range=[f_k - 2., f_k + 2.],
-                                   filt_type='stop', order=4)
-            eeg = hb.filter(timeseries=eeg)
+            harmonic_filter = ButterworthFilter(freq_range=[harmonic - 2., harmonic + 2.],
+                                                filt_type='stop', order=4)
+            eeg = harmonic_filter.filter(timeseries=eeg)
 
     return eeg
 
@@ -418,21 +395,19 @@ def find_overlapping_pairs(pairs: pd.DataFrame) -> set[tuple[int, int]]:
             List of tuples of the form (i, j), where i is the row index of a bipolar pair in the pairs DataFrame and j is the row index of a bipolar pair that shares a monopolar contact.
     '''
 
-    # Vectorized: build the symmetric overlap matrix via numpy broadcasting,
-    # then enumerate (i, j) in row-major order to match the legacy Python
-    # double-loop output (diagonal self-pairs included — see test_helper
-    # ``TestFindOverlappingPairs`` for the pinned behavior).
-    c1 = pairs["contact_label_1"].to_numpy()
-    c2 = pairs["contact_label_2"].to_numpy()
+    # Row-major (i, j), diagonal self-pairs included, as the legacy double loop
+    # (pinned by test_helper TestFindOverlappingPairs).
+    contacts_1 = pairs["contact_label_1"].to_numpy()
+    contacts_2 = pairs["contact_label_2"].to_numpy()
     n = len(pairs)
     if n == 0:
         return []
     overlap_matrix = (
-        (c1[:, None] == c1[None, :]) | (c1[:, None] == c2[None, :]) |
-        (c2[:, None] == c1[None, :]) | (c2[:, None] == c2[None, :])
+        (contacts_1[:, None] == contacts_1[None, :]) | (contacts_1[:, None] == contacts_2[None, :]) |
+        (contacts_2[:, None] == contacts_1[None, :]) | (contacts_2[:, None] == contacts_2[None, :])
     )
-    ii, jj = np.nonzero(overlap_matrix)
-    return [(int(i), int(j)) for i, j in zip(ii, jj)]
+    rows, cols = np.nonzero(overlap_matrix)
+    return [(int(i), int(j)) for i, j in zip(rows, cols)]
 
 def make_overlap_mask(pairs: pd.DataFrame, n_ch: int) -> NDArrayAny:
     assert len(pairs) <= n_ch, (
@@ -467,19 +442,11 @@ def apply_overlap_mask(
 
 @functools.lru_cache(maxsize=None)
 def _load_region_lists() -> pd.Series:
-    '''Build the cached region-information Series.
-
-    Reads `region_translator.csv` (next to helper.py) once and constructs the
-    four-entry pandas Series returned by `get_region_information`. The
-    `lru_cache` keeps the result for the lifetime of the process so repeated
-    calls across hundreds of plot/compute scripts do not re-hit the disk.
-    '''
-    # Resolve the CSV path relative to helper.py itself so the function works
-    # regardless of the caller's CWD (avoids spurious FileNotFoundError when
-    # scripts are invoked from a different directory, e.g. by snakemake or
-    # pytest with a non-repo-root CWD).
-    _csv_path = str(Path(__file__).resolve().parent / 'region_translator.csv')
-    region_translator = pd.read_csv(_csv_path, na_filter=False).set_index('atlas_label')
+    '''The four-entry Series returned by `get_region_information`, read once
+    from `region_translator.csv` (next to helper.py).'''
+    # relative to helper.py so the caller's CWD does not matter
+    csv_path = str(Path(__file__).resolve().parent / 'region_translator.csv')
+    region_translator = pd.read_csv(csv_path, na_filter=False).set_index('atlas_label')
     original_labels = np.unique(region_translator.index)
     unique_region_names = np.sort(region_translator.query('region != "nan"')['region'].unique())
     region_labels = np.char.add(np.repeat(['L ', 'R '], len(unique_region_names)).astype(str), np.tile(unique_region_names, 2).astype(str))
@@ -539,13 +506,13 @@ def _label_cascade(
     labels = np.array(['nan'] * n, dtype=object)
     source = np.array(['no atlas'] * n, dtype=object)
     for atlas in reversed(atlases):          # highest priority wins: assign it last
-        vals = pairs[atlas].astype(str).to_numpy()
-        low = np.char.lower(vals.astype(str))
-        ok = ~np.isin(low, list(_SENTINEL_TOKENS))
+        atlas_labels = pairs[atlas].astype(str).to_numpy()
+        lowered = np.char.lower(atlas_labels.astype(str))
+        has_label = ~np.isin(lowered, list(_SENTINEL_TOKENS))
         if atlas == 'mat.tal.region':
-            ok &= ~np.array([any(u in v for u in _TAL_UNRELIABLE) for v in low], bool)
-        labels[ok] = vals[ok]
-        source[ok] = atlas
+            has_label &= ~np.array([any(bad in lab for bad in _TAL_UNRELIABLE) for lab in lowered], bool)
+        labels[has_label] = atlas_labels[has_label]
+        source[has_label] = atlas
     return labels, source
 
 
@@ -554,17 +521,17 @@ def get_atlas_labels_by_type(pairs: pd.DataFrame) -> pd.DataFrame:
     D), surface cascade for grid/strip, every atlas for pairs of unknown type.
     Returns a DataFrame with `pair_label`, `atlas_label`, `atlas` (the source
     column)."""
-    etype = (pairs['type_1'].astype(str).str.upper() if 'type_1' in pairs.columns
-             else pd.Series(['NAN'] * len(pairs), index=pairs.index))
+    electrode_type = (pairs['type_1'].astype(str).str.upper() if 'type_1' in pairs.columns
+                      else pd.Series(['NAN'] * len(pairs), index=pairs.index))
     labels_out = np.empty(len(pairs), dtype=object)
     source_out = np.empty(len(pairs), dtype=object)
     if LONGETAL and LONGETAL.get('atlases'):   # Long et al.: Desikan-Killiany for every contact
         labels_out[:], source_out[:] = _label_cascade(pairs, LONGETAL['atlases'])
         return pd.DataFrame({'pair_label': pairs['label'].to_numpy(),
                              'atlas_label': labels_out, 'atlas': source_out}, index=pairs.index)
-    for mask, cascade in ((etype.isin(('D', 'UD')).to_numpy(), _VOLUMETRIC_ATLASES),
-                          (etype.isin(('G', 'S')).to_numpy(), _SURFACE_ATLASES),
-                          (~etype.isin(('D', 'UD', 'G', 'S')).to_numpy(), _ALL_ATLASES)):
+    for mask, cascade in ((electrode_type.isin(('D', 'UD')).to_numpy(), _VOLUMETRIC_ATLASES),
+                          (electrode_type.isin(('G', 'S')).to_numpy(), _SURFACE_ATLASES),
+                          (~electrode_type.isin(('D', 'UD', 'G', 'S')).to_numpy(), _ALL_ATLASES)):
         if mask.any():
             labels_out[mask], source_out[mask] = _label_cascade(pairs.loc[mask], cascade)
     return pd.DataFrame({'pair_label': pairs['label'].to_numpy(),
@@ -641,11 +608,11 @@ def timebin_timeseries(
     bin_count = int(np.round(timeseries.shape[-1] / bin_size))
 
     timebinned_timeseries = []
-    for iBin in range(bin_count):
-        left_edge = iBin * bin_size
-        right_edge = (iBin + 1) * bin_size if iBin < bin_count - 1 else None
-        this_epoch = average_function(timeseries[..., left_edge:right_edge], axis=-1)
-        timebinned_timeseries.append(this_epoch)
+    for i_bin in range(bin_count):
+        left_edge = i_bin * bin_size
+        right_edge = (i_bin + 1) * bin_size if i_bin < bin_count - 1 else None
+        bin_average = average_function(timeseries[..., left_edge:right_edge], axis=-1)
+        timebinned_timeseries.append(bin_average)
 
     timebinned_timeseries = np.asarray(timebinned_timeseries)
     timebinned_timeseries = np.moveaxis(timebinned_timeseries, 0, -1)
@@ -665,7 +632,7 @@ def cohens_d(x: NDArrayAny, y: NDArrayAny) -> float:
         d (float): Cohen's d.
     '''
     
-    s = np.sqrt(((len(x)-1)*(np.std(x, axis=0, ddof=1)**2) + (len(y)-1)*(np.std(y, axis=0, ddof=1)**2))/(len(x)+len(y)-2))
-    d = (np.mean(x, axis=0) - np.mean(y, axis=0))/s
+    pooled_sd = np.sqrt(((len(x)-1)*(np.std(x, axis=0, ddof=1)**2) + (len(y)-1)*(np.std(y, axis=0, ddof=1)**2))/(len(x)+len(y)-2))
+    d = (np.mean(x, axis=0) - np.mean(y, axis=0))/pooled_sd
     return d
 

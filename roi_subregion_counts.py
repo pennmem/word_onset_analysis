@@ -9,15 +9,9 @@ opens that pooling up: for one ROI it lists the constituent regions and plots
     - number of SUBJECTS with >=1 bipolar pair in that region
     - number of bipolar PAIRS (electrodes) in that region, summed over subjects
 
-Labels come from the same canonical type-aware cascade the ROIwise scripts use
-(helper.regionalize_electrodes_by_type: volumetric atlases for D/uD depths,
-surface atlases for G/S grids-strips), so the counts describe exactly what gets
-pooled downstream -- no separate labeling path.
-
-Sessions are unioned within a subject: a region counts for a subject if any of
-that subject's sessions has a pair there. Pair counts use the session with the
-most pairs in that region (montages differ across sessions; summing would
-double-count the same physical contacts).
+Labels come from the same cascade the ROI scripts use
+(helper.regionalize_electrodes_by_type), so the counts describe exactly what gets
+pooled downstream.
 
 Usage
 -----
@@ -65,12 +59,12 @@ _FNAME_RE = re.compile(r"^(?P<sub>[^_]+)_(?P<exp>.+)_(?P<sess>\d+)_pairs\.json$"
 # ------------------------------- tabulation ---------------------------------
 def _session_files():
     """(sub, exp, sess, path) for every pairs.json on disk, sorted."""
-    out = []
-    for p in sorted(PAIRS_DIR.glob("*_pairs.json")):
-        m = _FNAME_RE.match(p.name)
-        if m:
-            out.append((m["sub"], m["exp"], int(m["sess"]), p))
-    return out
+    files = []
+    for path in sorted(PAIRS_DIR.glob("*_pairs.json")):
+        match = _FNAME_RE.match(path.name)
+        if match:
+            files.append((match["sub"], match["exp"], int(match["sess"]), path))
+    return files
 
 
 def _label_session(sub: str, exp: str, sess: int, path: Path) -> pd.DataFrame:
@@ -85,19 +79,19 @@ def _label_session(sub: str, exp: str, sess: int, path: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.DataFrame({
-        "hemi": labels.map(lambda v: v.split(" ", 1)[0]),
-        "region": labels.map(lambda v: v.split(" ", 1)[1] if " " in v else "nan"),
+        "hemi": labels.map(lambda label: label.split(" ", 1)[0]),
+        "region": labels.map(lambda label: label.split(" ", 1)[1] if " " in label else "nan"),
     })
     df = df[(df["region"] != "nan") & df["hemi"].isin(["L", "R"])]
     if not len(df):
         return pd.DataFrame()
 
-    out = df.groupby(["region", "hemi"], as_index=False).size()
-    out = out.rename(columns={"size": "n_pairs"})
-    out.insert(0, "sub", sub)
-    out.insert(1, "exp", exp)
-    out.insert(2, "sess", sess)
-    return out
+    counts = df.groupby(["region", "hemi"], as_index=False).size()
+    counts = counts.rename(columns={"size": "n_pairs"})
+    counts.insert(0, "sub", sub)
+    counts.insert(1, "exp", exp)
+    counts.insert(2, "sess", sess)
+    return counts
 
 
 def build_table(refresh: bool = False) -> pd.DataFrame:
@@ -110,9 +104,9 @@ def build_table(refresh: bool = False) -> pd.DataFrame:
     rows, failed = [], []
     for i, (sub, exp, sess, path) in enumerate(files, 1):
         try:
-            r = _label_session(sub, exp, sess, path)
-            if len(r):
-                rows.append(r)
+            sess_counts = _label_session(sub, exp, sess, path)
+            if len(sess_counts):
+                rows.append(sess_counts)
         except Exception as e:  # a handful of montages have malformed pairs.json
             failed.append((sub, exp, sess, repr(e)))
         if i % 100 == 0:
@@ -131,8 +125,8 @@ def build_table(refresh: bool = False) -> pd.DataFrame:
 
 
 def load_lobe_map() -> dict[str, str]:
-    lobe = pd.read_csv(HERE / "region_to_burke_lobe.csv")
-    return lobe.set_index("region")["burke_lobe"].to_dict()
+    lobe_table = pd.read_csv(HERE / "region_to_burke_lobe.csv")
+    return lobe_table.set_index("region")["burke_lobe"].to_dict()
 
 
 # ------------------------------ summarizing ---------------------------------
@@ -148,39 +142,38 @@ def summarize(table: pd.DataFrame, lobe_of: dict[str, str], roi: str,
     df = table.copy()
     if exp:
         df = df[df["exp"] == exp]
-    df["lobe"] = df["region"].map(lambda r: lobe_of.get(r, ""))
+    df["lobe"] = df["region"].map(lambda region: lobe_of.get(region, ""))
     df = df[df["lobe"] == roi]
     if not len(df):
         return pd.DataFrame(columns=["subregion", "n_subjects", "n_pairs"])
 
     df["subregion"] = (df["hemi"] + "-" + df["region"]) if split_hemi else df["region"]
 
-    # collapse sessions within a subject
     per_sub = (df.groupby(["subregion", "sub"], as_index=False)["n_pairs"].max())
-    out = (per_sub.groupby("subregion")
-                  .agg(n_subjects=("sub", "nunique"), n_pairs=("n_pairs", "sum"))
-                  .reset_index()
-                  .sort_values(["n_subjects", "n_pairs"], ascending=False)
-                  .reset_index(drop=True))
-    return out
+    summary = (per_sub.groupby("subregion")
+                      .agg(n_subjects=("sub", "nunique"), n_pairs=("n_pairs", "sum"))
+                      .reset_index()
+                      .sort_values(["n_subjects", "n_pairs"], ascending=False)
+                      .reset_index(drop=True))
+    return summary
 
 
 # -------------------------------- plotting ----------------------------------
 def plot_counts(summary: pd.DataFrame, roi: str, total_subs: int,
                 exp: str | None, split_hemi: bool) -> plt.Figure:
-    n = max(len(summary), 1)
-    fig, axes = plt.subplots(1, 2, figsize=(11, 0.42 * n + 2.2), sharey=True)
+    n_rows = max(len(summary), 1)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 0.42 * n_rows + 2.2), sharey=True)
     y = np.arange(len(summary))[::-1]  # largest at top
 
     axes[0].barh(y, summary["n_subjects"], color="#4C72B0", height=0.7)
     axes[0].set_xlabel("Subjects with ≥1 pairs")
-    for yi, v in zip(y, summary["n_subjects"]):
-        axes[0].text(v, yi, f" {v}", va="center", fontsize=8)
+    for yi, count in zip(y, summary["n_subjects"]):
+        axes[0].text(count, yi, f" {count}", va="center", fontsize=8)
 
     axes[1].barh(y, summary["n_pairs"], color="#DD8452", height=0.7)
     axes[1].set_xlabel("Total pairs count")
-    for yi, v in zip(y, summary["n_pairs"]):
-        axes[1].text(v, yi, f" {v}", va="center", fontsize=8)
+    for yi, count in zip(y, summary["n_pairs"]):
+        axes[1].text(count, yi, f" {count}", va="center", fontsize=8)
 
     axes[0].set_yticks(y)
     axes[0].set_yticklabels(summary["subregion"])
@@ -198,16 +191,16 @@ def plot_counts(summary: pd.DataFrame, roi: str, total_subs: int,
 
 # ---------------------------------- main ------------------------------------
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--roi", default="occipital",
-                    help=f"one of {LOBES} (or 'subcortical'), or 'all'")
-    ap.add_argument("--exp", default=None, help="restrict to one experiment, e.g. FR1")
-    ap.add_argument("--split-hemi", action="store_true",
-                    help="count L and R subregions separately")
-    ap.add_argument("--refresh", action="store_true", help="rebuild the cache")
-    ap.add_argument("--figdir", default=str(FIGDIR))
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--roi", default="occipital",
+                        help=f"one of {LOBES} (or 'subcortical'), or 'all'")
+    parser.add_argument("--exp", default=None, help="restrict to one experiment, e.g. FR1")
+    parser.add_argument("--split-hemi", action="store_true",
+                        help="count L and R subregions separately")
+    parser.add_argument("--refresh", action="store_true", help="rebuild the cache")
+    parser.add_argument("--figdir", default=str(FIGDIR))
+    args = parser.parse_args()
 
     table = build_table(refresh=args.refresh)
     lobe_of = load_lobe_map()

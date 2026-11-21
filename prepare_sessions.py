@@ -55,19 +55,17 @@ def apply_manual_session_exclusions(
     df: pd.DataFrame,
     csv_path: str = EXCLUDED_SESSIONS_CSV,
 ) -> pd.DataFrame:
-    """Flip ``include`` to False on rows matching ``config/excluded_sessions.csv``.
-
-    The CSV schema is ``sub, exp, sess, reason``. A row matches when all of
-    ``sub, exp, sess`` equal a CSV row. Missing CSV → returns ``df`` unchanged.
-    Returns a new DataFrame (does not mutate input).
+    """Flip ``include`` to False on rows whose (sub, exp, sess) is listed in
+    ``config/excluded_sessions.csv`` (sub, exp, sess, reason). Missing CSV →
+    ``df`` unchanged; never mutates ``df``.
     """
     if not os.path.isfile(csv_path):
         return df
-    excl = pd.read_csv(csv_path)
-    if excl.empty:
+    excluded = pd.read_csv(csv_path)
+    if excluded.empty:
         return df
     df = df.copy()
-    excl_keys = set(map(tuple, excl[KEY_COLS].itertuples(index=False, name=None)))
+    excl_keys = set(map(tuple, excluded[KEY_COLS].itertuples(index=False, name=None)))
     df_keys = list(map(tuple, df[KEY_COLS].itertuples(index=False, name=None)))
     mask = pd.Series([k in excl_keys for k in df_keys], index=df.index)
     df.loc[mask, "include"] = False
@@ -82,9 +80,9 @@ def setup_dirs(root_dir: str) -> None:
 
 def stage_setup(root_dir: str) -> None:
     setup_dirs(root_dir)
-    initial = join(root_dir, "sess_list_df_initial.csv")
-    if not os.path.exists(initial):
-        print(f"[setup] building {initial}")
+    initial_csv = join(root_dir, "sess_list_df_initial.csv")
+    if not os.path.exists(initial_csv):
+        print(f"[setup] building {initial_csv}")
         data_check.build_sess_list_df_initial(root_dir)
 
 
@@ -93,8 +91,8 @@ def run_check_data_worker(dfrow: pd.Series, root_dir: str) -> str:
     import helper
     from misc import ftag
     helper.root_dir = root_dir
-    check = data_check.check_data(dfrow, root_dir)
-    check.to_json(join(root_dir, "data_check", f"{ftag(dfrow)}_data_check.json"))
+    check_result = data_check.check_data(dfrow, root_dir)
+    check_result.to_json(join(root_dir, "data_check", f"{ftag(dfrow)}_data_check.json"))
     return ftag(dfrow)
 
 
@@ -135,17 +133,17 @@ def stage_build_final_df(root_dir: str) -> pd.DataFrame:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--n-subjects", type=int, default=None,
-                   help="only the first K subjects (all their sessions)")
-    p.add_argument("--subjects", nargs="+", default=None,
-                   help="only these subjects (applied before --n-subjects)")
-    p.add_argument("--workers", type=int, default=1,
-                   help="sessions processed at once in separate processes")
-    p.add_argument("--setup-only", action="store_true",
-                   help="only build the session listing (stage 0)")
-    return p.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--n-subjects", type=int, default=None,
+                        help="only the first K subjects (all their sessions)")
+    parser.add_argument("--subjects", nargs="+", default=None,
+                        help="only these subjects (applied before --n-subjects)")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="sessions processed at once in separate processes")
+    parser.add_argument("--setup-only", action="store_true",
+                        help="only build the session listing (stage 0)")
+    return parser.parse_args()
 
 
 def select_sessions(df: pd.DataFrame, args: argparse.Namespace) -> list[pd.Series]:
@@ -160,7 +158,7 @@ def select_sessions(df: pd.DataFrame, args: argparse.Namespace) -> list[pd.Serie
 
 def run_stage(name: str, sess_list: Sequence[pd.Series], worker: Any,
               root_dir: str, workers: int) -> None:
-    n_subj = len({r["sub"] for r in sess_list})
+    n_subj = len({row["sub"] for row in sess_list})
     print(f"[{name}] {len(sess_list)} sessions ({n_subj} subjects)")
     if workers > 1:
         helper.prefetch_bids(sess_list)

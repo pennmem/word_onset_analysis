@@ -30,18 +30,18 @@ def main() -> None:
         p = fc.load_pickle(str(f))
         centres = np.asarray(p["bin_centers_ms"], float)
         roi = fc.roi_of_reg_full(p["reg_full"], lobe_of)
-        rows += [(str(p["sid"][0]), str(lab), r, float(c), float(v))
-                 for lab, r, dd in zip(p["labels"], roi, np.asarray(p["cohens_d_bins"], float)) if r is not None
-                 for c, v in zip(centres, dd) if np.isfinite(v)]
+        rows += [(str(p["sid"][0]), str(label), r, float(centre), float(d))
+                 for label, r, d_bins in zip(p["labels"], roi, np.asarray(p["cohens_d_bins"], float)) if r is not None
+                 for centre, d in zip(centres, d_bins) if np.isfinite(d)]
     el = (pd.DataFrame(rows, columns=["sub", "label", "roi", "bin_ms", "d"])
             .groupby(["sub", "label", "roi", "bin_ms"], as_index=False)["d"].mean())
-    tbl = el.groupby(["sub", "roi", "bin_ms"]).agg(d=("d", "mean"), n_elec=("label", "nunique")).reset_index()
-    tbl = tbl[tbl["n_elec"] >= args.min_electrodes]
-    stats = fc.bin_stats(tbl, "bin_ms", "d")
+    per_sub = el.groupby(["sub", "roi", "bin_ms"]).agg(d=("d", "mean"), n_elec=("label", "nunique")).reset_index()
+    per_sub = per_sub[per_sub["n_elec"] >= args.min_electrodes]
+    stats = fc.bin_stats(per_sub, "bin_ms", "d")
     os.makedirs(args.out_dir, exist_ok=True)
     stem = join(args.out_dir, f"power_timecourse_{BEH}_{BAND}")
     stats.to_csv(fc.table_path(f"{stem}_stats.csv"), index=False)
-    tbl.to_csv(fc.table_path(f"{stem}_per_subject.csv"), index=False)
+    per_sub.to_csv(fc.table_path(f"{stem}_per_subject.csv"), index=False)
     path = fc.roi_curve_figure(stats, "bin_ms", stem, "Time after word onset (ms)", "Cohen's d")
     print(f"[saved] {path}")
 

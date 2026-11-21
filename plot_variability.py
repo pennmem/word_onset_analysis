@@ -52,61 +52,62 @@ def zs(v: np.ndarray) -> np.ndarray:
 
 def session_tables(p: dict, lobe_of: dict) -> tuple[list, pd.DataFrame | None]:
     """(electrode rows, event x lobe table) of one session."""
-    lo, hi = np.log(np.asarray(p["trial_pow_lo"], float)), np.log(np.asarray(p["trial_pow_hi"], float))
-    for x in (lo, hi):   # robust outliers per electrode
-        med = np.nanmedian(x, 0); mad = np.nanmedian(np.abs(x - med), 0) * 1.4826
-        x[np.abs(x - med) > OUTLIER_MAD * mad] = np.nan
+    y_off, y_on = np.log(np.asarray(p["trial_pow_lo"], float)), np.log(np.asarray(p["trial_pow_hi"], float))
+    for logpow in (y_off, y_on):   # robust outliers per electrode
+        med = np.nanmedian(logpow, 0); mad = np.nanmedian(np.abs(logpow - med), 0) * 1.4826
+        logpow[np.abs(logpow - med) > OUTLIER_MAD * mad] = np.nan
     roi = fc.roi_of_reg_full(p["reg_full"], lobe_of)
     lobe = np.array([r.split("-", 1)[1] if r else None for r in roi], dtype=object)
     sub = str(p["sid"][0])
-    el = [{"sub": sub, "session": str(p["sid"]), "label": l, "lobe": lb, "d": d}
-          for l, lb, d in zip(p["labels"], lobe, p["cohens_d"]) if lb]
-    w = fc.load_events(fc.dfrow_from_sid(p["sid"]), BEH)
-    w = w[np.asarray(w.attrs["mask"], bool)]
-    if len(w) != len(hi):
+    el = [{"sub": sub, "session": str(p["sid"]), "label": label, "lobe": lb, "d": d}
+          for label, lb, d in zip(p["labels"], lobe, p["cohens_d"]) if lb]
+    events = fc.load_events(fc.dfrow_from_sid(p["sid"]), BEH)
+    events = events[np.asarray(events.attrs["mask"], bool)]
+    if len(events) != len(y_on):
         return el, None
-    y = zs(hi)
-    tr = pd.DataFrame({"sub": sub, "session": str(p["sid"]), "serialpos": w["serialpos"].to_numpy(float),
-                       "list": w["trial"].to_numpy(float), "blank_ms": np.asarray(p["blank_ms_hi"], float),
-                       "recalled": np.asarray(p["recalled_hi"], float)})
+    y = zs(y_on)
+    trials = pd.DataFrame({"sub": sub, "session": str(p["sid"]), "serialpos": events["serialpos"].to_numpy(float),
+                           "list": events["trial"].to_numpy(float), "blank_ms": np.asarray(p["blank_ms_hi"], float),
+                           "recalled": np.asarray(p["recalled_hi"], float)})
     for lb in fc.LOBES:
         if (lobe == lb).any():
-            tr[lb] = np.nanmean(y[:, lobe == lb], 1)
-    return el, tr
+            trials[lb] = np.nanmean(y[:, lobe == lb], 1)
+    return el, trials
 
 
 def sme(tr: pd.DataFrame) -> pd.DataFrame:
     """Per subject x lobe: Cohen's d recalled vs not, raw and after removing the covariates."""
-    def d(v, r):
-        a, b = v[r == 1], v[r == 0]
-        return (a.mean() - b.mean()) / np.sqrt((a.var(ddof=1) + b.var(ddof=1)) / 2)
+    def cohens_d(resp, recalled):
+        rec, nonrec = resp[recalled == 1], resp[recalled == 0]
+        return (rec.mean() - nonrec.mean()) / np.sqrt((rec.var(ddof=1) + nonrec.var(ddof=1)) / 2)
     out = []
-    for sub, g in tr.groupby("sub"):
-        X = covariates(g)
-        X["sp2"], X["sp3"] = (g["serialpos"] == 2).astype(float), (g["serialpos"] == 3).astype(float)   # primacy: the first two positions in the events
-        r = g["recalled"].to_numpy()
+    for sub, sub_tr in tr.groupby("sub"):
+        X = covariates(sub_tr)
+        X["sp2"], X["sp3"] = (sub_tr["serialpos"] == 2).astype(float), (sub_tr["serialpos"] == 3).astype(float)   # primacy: the first two positions in the events
+        recalled = sub_tr["recalled"].to_numpy()
         for lb in fc.LOBES:
-            if lb not in g:
+            if lb not in sub_tr:
                 continue
-            ok = (g[lb].notna() & X.notna().all(1) & np.isfinite(r)).to_numpy()
-            if ok.sum() < 50 or min((r[ok] == 1).sum(), (r[ok] == 0).sum()) < 10:
+            valid = (sub_tr[lb].notna() & X.notna().all(1) & np.isfinite(recalled)).to_numpy()
+            if valid.sum() < 50 or min((recalled[valid] == 1).sum(), (recalled[valid] == 0).sum()) < 10:
                 continue
-            v = g[lb].to_numpy()[ok]
-            A = np.c_[X.to_numpy()[ok], np.ones(ok.sum())]
-            res = v - A @ np.linalg.lstsq(A, v, rcond=None)[0]
-            out.append({"sub": sub, "lobe": lb, "d_raw": d(v, r[ok]), "d_controlled": d(res, r[ok])})
+            resp = sub_tr[lb].to_numpy()[valid]
+            design = np.c_[X.to_numpy()[valid], np.ones(valid.sum())]
+            resid = resp - design @ np.linalg.lstsq(design, resp, rcond=None)[0]
+            out.append({"sub": sub, "lobe": lb, "d_raw": cohens_d(resp, recalled[valid]),
+                        "d_controlled": cohens_d(resid, recalled[valid])})
     return pd.DataFrame(out)
 
 
 def recall_behaviour(tr: pd.DataFrame) -> pd.DataFrame:
     out = []
-    for sub, g in tr.drop_duplicates(["session", "serialpos", "list"]).groupby("sub"):
-        X = covariates(g)
-        ok = X.notna().all(1) & g["recalled"].notna()
-        if g.loc[ok, "recalled"].nunique() < 2:
+    for sub, sub_tr in tr.drop_duplicates(["session", "serialpos", "list"]).groupby("sub"):
+        X = covariates(sub_tr)
+        valid = X.notna().all(1) & sub_tr["recalled"].notna()
+        if sub_tr.loc[valid, "recalled"].nunique() < 2:
             continue
-        m = LogisticRegression(penalty=None).fit(X[ok], g.loc[ok, "recalled"].astype(int))
-        out.append({"sub": sub, **dict(zip(COVS, m.coef_[0]))})
+        model = LogisticRegression(penalty=None).fit(X[valid], sub_tr.loc[valid, "recalled"].astype(int))
+        out.append({"sub": sub, **dict(zip(COVS, model.coef_[0]))})
     return pd.DataFrame(out)
 
 
@@ -114,82 +115,88 @@ def main() -> None:
     args, save_root = fc.plot_args(__doc__, join("figures", "variability"), **{
         "--from-csv": dict(action="store_true", help="reuse the saved electrode / trial tables")})
     os.makedirs(args.out_dir, exist_ok=True)
-    stem = lambda n: fc.table_path(join(args.out_dir, n))
+    table = lambda n: fc.table_path(join(args.out_dir, n))
     lobe_of = fc.load_burke_maps()
-    E, T = {}, {}
+    electrodes, trials = {}, {}
     for band in BANDS:
         if args.from_csv:
-            E[band], T[band] = pd.read_csv(stem(f"electrodes_{band}.csv")), pd.read_csv(stem(f"trials_{band}.csv"))
+            electrodes[band] = pd.read_csv(table(f"electrodes_{band}.csv"))
+            trials[band] = pd.read_csv(table(f"trials_{band}.csv"))
             continue
-        els, trs = [], []
+        el_rows, tr_tables = [], []
         for f in tqdm(fc.session_files(power_dir(save_root, BEH, band), "_power.pkl", args.n_sessions), desc=band):
             p = fc.load_pickle(str(f))
             el, tr = session_tables(p, lobe_of)
-            els += el
+            el_rows += el
             if tr is not None:
-                trs.append(tr)
-        E[band], T[band] = pd.DataFrame(els), pd.concat(trs, ignore_index=True)
-        os.makedirs(os.path.dirname(stem("x")), exist_ok=True)
-        E[band].to_csv(stem(f"electrodes_{band}.csv"), index=False); T[band].to_csv(stem(f"trials_{band}.csv"), index=False)
+                tr_tables.append(tr)
+        electrodes[band], trials[band] = pd.DataFrame(el_rows), pd.concat(tr_tables, ignore_index=True)
+        os.makedirs(os.path.dirname(table("x")), exist_ok=True)
+        electrodes[band].to_csv(table(f"electrodes_{band}.csv"), index=False)
+        trials[band].to_csv(table(f"trials_{band}.csv"), index=False)
 
     # event analyses: scored lists only (catFR1 list -1 is an unscored practice list); serial position <= 12
-    T = {b: t[(t["list"] >= 1) & (t["serialpos"] <= 12)] for b, t in T.items()}
+    trials = {b: t[(t["list"] >= 1) & (t["serialpos"] <= 12)] for b, t in trials.items()}
 
     # 1. do electrode differences replicate across sessions?
-    rel = []
-    for band, e in E.items():
-        for sub, g in e.groupby("sub"):
-            ss = sorted(g["session"].unique())
-            if len(ss) < 2:
+    reliability = []
+    for band, band_els in electrodes.items():
+        for sub, sub_els in band_els.groupby("sub"):
+            sessions = sorted(sub_els["session"].unique())
+            if len(sessions) < 2:
                 continue
-            g = g.assign(half=g["session"].map({s: i % 2 for i, s in enumerate(ss)}))
-            w = g.groupby(["lobe", "label", "half"])["d"].mean().unstack("half").dropna()
-            for lb, h in w.groupby(level="lobe"):
-                if len(h) >= 5:
-                    rel.append({"band": band, "sub": sub, "lobe": lb, "r": np.corrcoef(h[0], h[1])[0, 1], "n": len(h)})
-    rel = pd.DataFrame(rel); rel.to_csv(stem("electrode_reliability_per_subject.csv"), index=False)
+            sub_els = sub_els.assign(half=sub_els["session"].map({s: i % 2 for i, s in enumerate(sessions)}))
+            d_halves = sub_els.groupby(["lobe", "label", "half"])["d"].mean().unstack("half").dropna()
+            for lb, lobe_d in d_halves.groupby(level="lobe"):
+                if len(lobe_d) >= 5:
+                    reliability.append({"band": band, "sub": sub, "lobe": lb,
+                                        "r": np.corrcoef(lobe_d[0], lobe_d[1])[0, 1], "n": len(lobe_d)})
+    reliability = pd.DataFrame(reliability); reliability.to_csv(table("electrode_reliability_per_subject.csv"), index=False)
     fig, ax = plt.subplots(figsize=(7, 3.8))
     x = np.arange(len(fc.LOBES))
-    for k, (band, col) in enumerate(zip(BANDS, ("C0", "C3"))):
-        r = rel[rel["band"] == band]
-        fc.box_dots(ax, [r.loc[r["lobe"] == l, "r"].dropna() for l in fc.LOBES], x + (k - 0.5) * 0.38,
-                    [col] * len(fc.LOBES), width=0.32)
-        ax.plot([], [], "s", color=col, alpha=0.5, ms=9, label=BANDS[band])
+    for k, (band, color) in enumerate(zip(BANDS, ("C0", "C3"))):
+        band_rel = reliability[reliability["band"] == band]
+        fc.box_dots(ax, [band_rel.loc[band_rel["lobe"] == lb, "r"].dropna() for lb in fc.LOBES], x + (k - 0.5) * 0.38,
+                    [color] * len(fc.LOBES), width=0.32)
+        ax.plot([], [], "s", color=color, alpha=0.5, ms=9, label=BANDS[band])
     ax.set_ylabel("Electrode test-retest r")
-    ax.axhline(0, color="0.5", lw=0.8); ax.set_xticks(x, [l.capitalize() for l in fc.LOBES], rotation=30)
+    ax.axhline(0, color="0.5", lw=0.8); ax.set_xticks(x, [lb.capitalize() for lb in fc.LOBES], rotation=30)
     ax.spines[["top", "right"]].set_visible(False); ax.legend(frameon=False, fontsize=8)
     fig.tight_layout(); fig.savefig(join(args.out_dir, "electrode_reliability.png"), dpi=200); plt.close(fig)
-    rst = rel.groupby(["band", "lobe"])["r"].agg(["median", "size"]).reset_index()
-    rst.to_csv(stem("electrode_reliability_stats.csv"), index=False)
+    rel_stats = reliability.groupby(["band", "lobe"])["r"].agg(["median", "size"]).reset_index()
+    rel_stats.to_csv(table("electrode_reliability_stats.csv"), index=False)
 
     # 2. memory
-    beh = recall_behaviour(T["high_gamma"])
-    beh.to_csv(stem("recall_covariates_per_subject.csv"), index=False)
-    bst = pd.DataFrame([{"covariate": c, "n": len(beh), "beta": beh[c].mean(), "sem": beh[c].sem(),
-                         "p": ttest_1samp(beh[c], 0).pvalue} for c in COVS])
-    bst.to_csv(stem("recall_covariates_stats.csv"), index=False)
-    sst = []
+    recall_cov = recall_behaviour(trials["high_gamma"])
+    recall_cov.to_csv(table("recall_covariates_per_subject.csv"), index=False)
+    recall_stats = pd.DataFrame([{"covariate": c, "n": len(recall_cov), "beta": recall_cov[c].mean(),
+                                  "sem": recall_cov[c].sem(), "p": ttest_1samp(recall_cov[c], 0).pvalue} for c in COVS])
+    recall_stats.to_csv(table("recall_covariates_stats.csv"), index=False)
+    sme_stats = []
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True)
-    for ax, (band, tr) in zip(axes, T.items()):
-        s = sme(tr); s.to_csv(stem(f"sme_controlled_{band}_per_subject.csv"), index=False)
+    for ax, (band, tr) in zip(axes, trials.items()):
+        sub_sme = sme(tr); sub_sme.to_csv(table(f"sme_controlled_{band}_per_subject.csv"), index=False)
         x = np.arange(len(fc.LOBES))
-        for k, col in enumerate(["d_raw", "d_controlled"]):
-            g = s.groupby("lobe")[col]; mu, se = g.mean().reindex(fc.LOBES), g.sem().reindex(fc.LOBES)
-            ax.bar(x + (k - 0.5) * 0.38, mu, 0.36, yerr=se, color=[fc.LOBE_COLORS[l] for l in fc.LOBES],
+        for k, measure in enumerate(["d_raw", "d_controlled"]):
+            by_lobe = sub_sme.groupby("lobe")[measure]
+            mu, se = by_lobe.mean().reindex(fc.LOBES), by_lobe.sem().reindex(fc.LOBES)
+            ax.bar(x + (k - 0.5) * 0.38, mu, 0.36, yerr=se, color=[fc.LOBE_COLORS[lb] for lb in fc.LOBES],
                    alpha=1 if k == 0 else 0.45, capsize=2,
                    label="Raw" if k == 0 else "Covariates removed")
-        for lb, g in s.groupby("lobe"):
-            sst.append({"band": band, "lobe": lb, "n": len(g), "d_raw": g["d_raw"].mean(),
-                        "d_controlled": g["d_controlled"].mean(), "p_raw": ttest_1samp(g["d_raw"], 0).pvalue,
-                        "p_change": ttest_rel(g["d_raw"], g["d_controlled"]).pvalue})
-        ax.axhline(0, color="0.3", lw=0.8); ax.set_xticks(x, [l.capitalize() for l in fc.LOBES], rotation=30)
+        for lb, lobe_sme in sub_sme.groupby("lobe"):
+            sme_stats.append({"band": band, "lobe": lb, "n": len(lobe_sme), "d_raw": lobe_sme["d_raw"].mean(),
+                              "d_controlled": lobe_sme["d_controlled"].mean(),
+                              "p_raw": ttest_1samp(lobe_sme["d_raw"], 0).pvalue,
+                              "p_change": ttest_rel(lobe_sme["d_raw"], lobe_sme["d_controlled"]).pvalue})
+        ax.axhline(0, color="0.3", lw=0.8); ax.set_xticks(x, [lb.capitalize() for lb in fc.LOBES], rotation=30)
         ax.set_title(BANDS[band]); ax.spines[["top", "right"]].set_visible(False)
     axes[0].set_ylabel("Subsequent memory effect\n(Cohen's d, recalled vs not)"); axes[0].legend(frameon=False, fontsize=8)
     fig.tight_layout(); fig.savefig(join(args.out_dir, "sme_controlled.png"), dpi=200); plt.close(fig)
-    sst = pd.DataFrame(sst); sst.to_csv(stem("sme_controlled_stats.csv"), index=False)
+    sme_stats = pd.DataFrame(sme_stats); sme_stats.to_csv(table("sme_controlled_stats.csv"), index=False)
 
     pd.set_option("display.width", 200)
-    for name, t in [("electrode reliability", rst), ("recall ~ covariates", bst), ("SME raw vs controlled", sst)]:
+    for name, t in [("electrode reliability", rel_stats), ("recall ~ covariates", recall_stats),
+                    ("SME raw vs controlled", sme_stats)]:
         print(f"\n[{name}]\n{t.round(3).to_string(index=False)}")
 
 

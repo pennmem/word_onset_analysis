@@ -300,22 +300,20 @@ LaTeX Font Info:    External font `cmex10' loaded for size
 LaTeX Font Info:    External font `cmex10' loaded for size
 (Font)              <6> on input line 17.
 LaTeX Font Info:    External font `cmex10' loaded for size
-(Font)              <10.95> on input line 29.
+(Font)              <10.95> on input line 27.
  [1
 
-]
+] [2]
 File: img/figS1_power_subjects.png Graphic file (type bmp)
 <img/figS1_power_subjects.png>
-LaTeX Font Info:    External font `cmex10' loaded for size
-(Font)              <14.4> on input line 94.
-LaTeX Font Info:    External font `cmex10' loaded for size
-(Font)              <7> on input line 94.
 File: img/variance_components_power.png Graphic file (type bmp)
 <img/variance_components_power.png>
 File: img/fig1c_single_subject.png Graphic file (type bmp)
 <img/fig1c_single_subject.png>
 LaTeX Font Info:    External font `cmex10' loaded for size
-(Font)              <5> on input line 96.
+(Font)              <7> on input line 102.
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <5> on input line 102.
 
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
@@ -324,12 +322,13 @@ File: img/variance_components_latency.png Graphic file (type bmp)
 <img/variance_components_latency.png>
 File: img/fig2b_propagation_waveforms.png Graphic file (type bmp)
 <img/fig2b_propagation_waveforms.png>
-File: img/fig2c_subregion_waveforms.png Graphic file (type bmp)
-<img/fig2c_subregion_waveforms.png>
 File: img/fig2c_propagation_shift.png Graphic file (type bmp)
 <img/fig2c_propagation_shift.png>
 File: img/fig4d_amp_latency.png Graphic file (type bmp)
 <img/fig4d_amp_latency.png>
+
+LaTeX Warning: Float too large for page by 10.5644pt on input line 113.
+
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
@@ -341,8 +340,25 @@ File: img/fig3d_peaklat.png Graphic file (type bmp)
 <img/fig3d_peaklat.png>
 File: img/carryover.png Graphic file (type bmp)
 <img/carryover.png>
+File: img/fig3e_isi_hist.png Graphic file (type bmp)
+<img/fig3e_isi_hist.png>
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
+
+File: img/fig4_recall_model.png Graphic file (type bmp)
+<img/fig4_recall_model.png>
+
+LaTeX Warning: `!h' float specifier changed to `!ht'.
+
+[3] [4] [5] [6] [7]
+File: img/electrode_reliability.png Graphic file (type bmp)
+<img/electrode_reliability.png>
+File: img/alpha_hg_across_electrodes.png Graphic file (type bmp)
+<img/alpha_hg_across_electrodes.png>
+File: img/figS2_offset_prev.png Graphic file (type bmp)
+<img/figS2_offset_prev.png>
+File: img/fig2c_subregion_waveforms.png Graphic file (type bmp)
+<img/fig2c_subregion_waveforms.png>
 
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
@@ -352,22 +368,12 @@ File: img/fig6c_epochs_alpha.png Graphic file (type bmp)
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
-File: img/electrode_reliability.png Graphic file (type bmp)
-<img/electrode_reliability.png>
-File: img/alpha_hg_across_electrodes.png Graphic file (type bmp)
-<img/alpha_hg_across_electrodes.png>
+[8
 
-LaTeX Warning: `!h' float specifier changed to `!ht'.
-
-File: img/figS2_offset_prev.png Graphic file (type bmp)
-<img/figS2_offset_prev.png>
-
-LaTeX Warning: `!h' float specifier changed to `!ht'.
-
-[2] [3] [4] [5] [6] [7] (proposal.bbl) [8
+] [9] (proposal.bbl) [10
 
 ] (proposal.aux)
 Package rerunfilecheck Info: File `proposal.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
  )
-Output written on proposal.xdv (8 pages, 122436 bytes).
+Output written on proposal.xdv (10 pages, 132532 bytes).

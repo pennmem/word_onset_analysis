@@ -34,8 +34,8 @@ def power_table(save_root: str, band: str, lobe_of: dict, n_sessions=None) -> pd
     for f in tqdm(fc.session_files(power_dir(save_root, BEH, band), "_power.pkl", n_sessions), desc=f"power {band}"):
         p = fc.load_pickle(str(f))
         roi = fc.roi_of_reg_full(p["reg_full"], lobe_of)
-        rows += [(str(p["sid"][0]), str(lab), r, str(fine), float(lo), float(hi), float(d))
-                 for lab, r, fine, lo, hi, d in zip(p["labels"], roi, p["reg_full"], p["pow_lo"], p["pow_hi"], p["cohens_d"])
+        rows += [(str(p["sid"][0]), str(label), r, str(fine), float(lo), float(hi), float(d))
+                 for label, r, fine, lo, hi, d in zip(p["labels"], roi, p["reg_full"], p["pow_lo"], p["pow_hi"], p["cohens_d"])
                  if r is not None and np.isfinite(lo) and np.isfinite(hi)]
     df = pd.DataFrame(rows, columns=["sub", "label", "roi", "fine", "lo", "hi", "cohens_d"])
     df = df.groupby(["sub", "label", "roi", "fine"], as_index=False)[["lo", "hi", "cohens_d"]].mean()
@@ -52,9 +52,9 @@ def sync_table(save_root: str, band: str, metric: str, lobe_of: dict, n_sessions
         if pairs is None or mat.get(metric) is None:
             continue
         roi = fc.roi_of_reg_full(mat["reg_full"], lobe_of, pool=False)
-        rows += [(str(mat["sid"][0]), lab, r, float(v))
-                 for lab, r, v in zip(pairs["label"].astype(str), roi, fc.electrode_sync(np.asarray(mat[metric], float)))
-                 if r is not None and np.isfinite(v)]
+        rows += [(str(mat["sid"][0]), label, r, float(sync))
+                 for label, r, sync in zip(pairs["label"].astype(str), roi, fc.electrode_sync(np.asarray(mat[metric], float)))
+                 if r is not None and np.isfinite(sync)]
     df = pd.DataFrame(rows, columns=["sub", "label", "roi", "sync_diff"])
     return df.groupby(["sub", "label", "roi"], as_index=False)[["sync_diff"]].mean()
 
@@ -63,29 +63,29 @@ def main() -> None:
     args, save_root = fc.plot_args(__doc__, "figures", **{
         "--measure": dict(nargs="+", default=["power", "synchrony"], choices=["power", "synchrony"])})
     lobe_of = fc.load_burke_maps()
-    c = fc.contrast(BEH)
-    vs = f"({c['delta_label']})"
+    con = fc.contrast(BEH)
+    delta_label = f"({con['delta_label']})"
     if "power" in args.measure:
-        out, stem = join(args.out_dir, "burke_roi_power"), f"roi_power_{BEH}_{{band}}"
+        fig_dir, stem = join(args.out_dir, "burke_roi_power"), f"roi_power_{BEH}_{{band}}"
         for band in BANDS:
             el = power_table(save_root, band, lobe_of, args.n_sessions)
-            tbl = fc.subject_roi_means(el, list(MEASURES), min_electrodes=args.min_electrodes)
-            stats = {m: fc.roi_stats(tbl, m) for m in MEASURES}
-            fc.print_roi_stats(stats["cohens_d"], f"{band} power, Cohen's d {vs}:")
-            fc.write_roi_csvs(out, stem.format(band=band), tbl, el, stats)
+            sub_roi = fc.subject_roi_means(el, list(MEASURES), min_electrodes=args.min_electrodes)
+            stats = {m: fc.roi_stats(sub_roi, m) for m in MEASURES}
+            fc.print_roi_stats(stats["cohens_d"], f"{band} power, Cohen's d {delta_label}:")
+            fc.write_roi_csvs(fig_dir, stem.format(band=band), sub_roi, el, stats)
         for bars in (False, True):
-            fc.band_contrast_figure(out, stem, "cohens_d", f"Power, Cohen's d {vs}", bars=bars)
+            fc.band_contrast_figure(fig_dir, stem, "cohens_d", f"Power, Cohen's d {delta_label}", bars=bars)
     if "synchrony" in args.measure:
-        out, stem = join(args.out_dir, "burke_roi_synchrony"), f"roi_synchrony_{BEH}_{{band}}_{{metric}}"
+        fig_dir, stem = join(args.out_dir, "burke_roi_synchrony"), f"roi_synchrony_{BEH}_{{band}}_{{metric}}"
         for band in BANDS:
             metric = fc.RUN_METRIC[band]
             el = sync_table(save_root, band, metric, lobe_of, args.n_sessions)
-            tbl = fc.subject_roi_means(el, ["sync_diff"], min_electrodes=args.min_electrodes)
-            stats = {"sync_diff": fc.roi_stats(tbl, "sync_diff")}
-            fc.print_roi_stats(stats["sync_diff"], f"{band} {metric}, mean over partners {vs}:")
-            fc.write_roi_csvs(out, stem.format(band=band, metric=metric), tbl, el, stats)
+            sub_roi = fc.subject_roi_means(el, ["sync_diff"], min_electrodes=args.min_electrodes)
+            stats = {"sync_diff": fc.roi_stats(sub_roi, "sync_diff")}
+            fc.print_roi_stats(stats["sync_diff"], f"{band} {metric}, mean over partners {delta_label}:")
+            fc.write_roi_csvs(fig_dir, stem.format(band=band, metric=metric), sub_roi, el, stats)
         for bars in (False, True):
-            fc.band_contrast_figure(out, stem, "sync_diff", f"{{metric}} {vs}", bars=bars)
+            fc.band_contrast_figure(fig_dir, stem, "sync_diff", f"{{metric}} {delta_label}", bars=bars)
 
 
 if __name__ == "__main__":

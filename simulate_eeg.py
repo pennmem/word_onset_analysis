@@ -53,19 +53,19 @@ def _load_simulation_parameters() -> dict[str, dict[str, Any]]:
     """Named parameter sets; each `sweeps` value becomes its own tag `<sweep>_<value>`."""
     with open(_SIM_CONFIG_PATH) as f:
         params = yaml.safe_load(f)
-    for name, sw in params.pop("sweeps", {}).items():
-        for v in sw["values"]:
-            params[f"{name}_{v}"] = {**sw["params"], **{k: v for k in sw["keys"]},
-                                     "sweep": name, "planted": v}
+    for name, sweep in params.pop("sweeps", {}).items():
+        for value in sweep["values"]:
+            params[f"{name}_{value}"] = {**sweep["params"], **{key: value for key in sweep["keys"]},
+                                         "sweep": name, "planted": value}
     return params
 
 
 simulation_parameters = _load_simulation_parameters()
 # {sweep name: [its tags in value order]}, for the Snakefile and plot_recovery.py
 SWEEPS: dict[str, list[str]] = {}
-for _tag, _p in simulation_parameters.items():
-    if "sweep" in _p:
-        SWEEPS.setdefault(_p["sweep"], []).append(_tag)
+for _tag, _params in simulation_parameters.items():
+    if "sweep" in _params:
+        SWEEPS.setdefault(_params["sweep"], []).append(_tag)
 
 
 def generate_pink_noise(n: int, amplitude: float, exponent: float, n_ref: int = 1000,
@@ -76,12 +76,12 @@ def generate_pink_noise(n: int, amplitude: float, exponent: float, n_ref: int = 
     clip is longer than the word-off clip: a broadband word-on decrease in the null).
     Generated at a fixed length n_gen (>= every clip) and cropped: FFT noise is periodic over
     its length, so per-clip lengths gave the longer clip more low-frequency power (+0.13% at 6 Hz)."""
-    m = max(n_gen, n + (n % 2))
-    scales = np.linspace(0, 0.5, m // 2 + 1)[1:] ** (-exponent / 2)
-    f = np.concatenate([[0], np.random.normal(scale=scales) * np.exp(2j * np.pi * np.random.random(m // 2))])
-    ref = np.linspace(0, 0.5, n_ref // 2 + 1)[1:] ** (-exponent / 2)
-    sigma = np.sqrt(2 * np.sum(ref ** 2)) / n_ref * np.sqrt(n_ref / m)
-    return (amplitude * np.fft.irfft(f) / sigma)[:n]
+    n_fft = max(n_gen, n + (n % 2))
+    scales = np.linspace(0, 0.5, n_fft // 2 + 1)[1:] ** (-exponent / 2)
+    spectrum = np.concatenate([[0], np.random.normal(scale=scales) * np.exp(2j * np.pi * np.random.random(n_fft // 2))])
+    ref_scales = np.linspace(0, 0.5, n_ref // 2 + 1)[1:] ** (-exponent / 2)
+    sigma = np.sqrt(2 * np.sum(ref_scales ** 2)) / n_ref * np.sqrt(n_ref / n_fft)
+    return (amplitude * np.fft.irfft(spectrum) / sigma)[:n]
 
 
 def _pink(shape: tuple[int, ...], p: dict[str, Any]) -> NDArrayAny:
@@ -96,7 +96,8 @@ def _pink(shape: tuple[int, ...], p: dict[str, Any]) -> NDArrayAny:
 def _channel_lobes(regionalizations: Sequence[Any]) -> NDArrayAny:
     """Burke lobe of each channel's region ('L frontal pole' -> 'frontal'), None if unmapped."""
     lobe_of = pd.read_csv(Path(__file__).resolve().parent / 'region_to_burke_lobe.csv').set_index('region')['burke_lobe']
-    return np.array([lobe_of.get(r.split(' ', 1)[1]) if isinstance(r, str) else None for r in regionalizations], dtype=object)
+    return np.array([lobe_of.get(region.split(' ', 1)[1]) if isinstance(region, str) else None
+                     for region in regionalizations], dtype=object)
 
 
 def _phase_cov(target: NDArrayAny, target_ppc: float, global_ppc: float) -> NDArrayAny:
@@ -115,78 +116,72 @@ def replace_w_simulated_EEG(eeg: TimeSeries, dfrow: pd.Series, condition_mask: N
     """Same shape/coords as `eeg` (time in ms), signal from `simulation_tag`.
     condition_mask True = post-onset events (osc_lag: target_ppc1), False = pre; `events`
     (indexed by eeg.event) gives correct_recall for `recall_gain`."""
-    p = simulation_parameters[simulation_tag]
+    params = simulation_parameters[simulation_tag]
     np.random.seed(zlib.crc32(np.ascontiguousarray(eeg.data).tobytes()))
     import fc_comparison_functions as fc   # the analyses' labels (recovered / MNI-neighbour), not the raw atlas
-    reg = fc.session_regions(dfrow["sub"], dfrow["exp"], str(dfrow["sess"]))
-    lobes = _channel_lobes(regionalize_electrodes_by_type(get_pairs(dfrow)) if reg is None else reg)
-    target = np.isin(lobes, p["target_lobes"])
+    regions = fc.session_regions(dfrow["sub"], dfrow["exp"], str(dfrow["sess"]))
+    lobes = _channel_lobes(regionalize_electrodes_by_type(get_pairs(dfrow)) if regions is None else regions)
+    target = np.isin(lobes, params["target_lobes"])
     t_ms = np.asarray(eeg.time, float)
-    data = _pink(eeg.shape, p)
-    win = ((t_ms >= p["active_ms"][0]) & (t_ms < p["active_ms"][1])) if "active_ms" in p \
-        else np.ones(t_ms.size, bool)   # where post-onset coupling is on
-    for dgp in np.atleast_1d(p["data_generating_process"]):   # several processes add up
+    data = _pink(eeg.shape, params)
+    active = ((t_ms >= params["active_ms"][0]) & (t_ms < params["active_ms"][1])) if "active_ms" in params \
+        else np.ones(t_ms.size, bool)
+    for dgp in np.atleast_1d(params["data_generating_process"]):   # several processes add up
         if dgp == "hg_power":
             import mne
-            hg = p["hg_amplitude"] * mne.filter.filter_data(np.random.standard_normal(eeg.shape),
-                                                            float(eeg.samplerate), *p["band"], verbose=False)
-            onset = np.array([p.get("onset_ms", {}).get(lb, 0) for lb in lobes])[target]
-            on = (t_ms[None, :] >= onset[:, None]) & win[None, :]   # (target ch, time)
-            hg[:, target] *= np.where(on, p["hg_gain"], 1.0)
-            if p.get("recall_gain"):   # later-recalled words: a further gain (recall decoder)
-                rec = events.loc[np.asarray(eeg.event), "correct_recall"].fillna(0).to_numpy(bool)
-                hg[np.ix_(rec, target)] *= np.where(on, p["recall_gain"], 1.0)
+            hg = params["hg_amplitude"] * mne.filter.filter_data(np.random.standard_normal(eeg.shape),
+                                                                 float(eeg.samplerate), *params["band"], verbose=False)
+            onset_ms = np.array([params.get("onset_ms", {}).get(lb, 0) for lb in lobes])[target]
+            gain_on = (t_ms[None, :] >= onset_ms[:, None]) & active[None, :]   # (target ch, time)
+            hg[:, target] *= np.where(gain_on, params["hg_gain"], 1.0)
+            if params.get("recall_gain"):   # for the recall decoder
+                recalled = events.loc[np.asarray(eeg.event), "correct_recall"].fillna(0).to_numpy(bool)
+                hg[np.ix_(recalled, target)] *= np.where(gain_on, params["recall_gain"], 1.0)
             data += hg
         elif dgp == "osc_lag":
-            # sustained oscillation; every other target channel shifted by phase_lag
-            # (ciPLV sees only the lagged pairs); outside `win` post events are uncoupled
-            mask = np.asarray(condition_mask, bool)
-            lag = np.where(target, np.cumsum(target) % 2 * p["phase_lag"], 0.0)
+            # every other target channel lagged: ciPLV sees only the lagged pairs
+            is_post = np.asarray(condition_mask, bool)
+            lag = np.where(target, np.cumsum(target) % 2 * params["phase_lag"], 0.0)
             # active_ms: target channels move from their outside phases to coupled ones over a
             # RAMP_MS raised-cosine ramp (a phase jump would leak power out of the band), and
             # non-target channels keep theirs (a redraw changed alpha power on every channel)
-            w = np.ones(t_ms.size)
-            if "active_ms" in p:
-                k = max(1, int(round(RAMP_MS * float(eeg.samplerate) / 1000)))
-                w = np.convolve(np.pad(win.astype(float), k, mode="edge"), np.hanning(k) / np.hanning(k).sum(), "same")[k:-k]
+            ramp = np.ones(t_ms.size)
+            if "active_ms" in params:
+                n_ramp = max(1, int(round(RAMP_MS * float(eeg.samplerate) / 1000)))
+                ramp = np.convolve(np.pad(active.astype(float), n_ramp, mode="edge"), np.hanning(n_ramp) / np.hanning(n_ramp).sum(), "same")[n_ramp:-n_ramp]
             def draw(key, n):   # (n, n_ch, 1) per-event phases
-                cov = _phase_cov(target, p[key], p["global_ppc"])
+                cov = _phase_cov(target, params[key], params["global_ppc"])
                 return (np.random.multivariate_normal(np.zeros(len(cov)), cov, size=n) + lag)[:, :, None]
-            for m, key in ((~mask, "target_ppc0"), (mask, "target_ppc1")):
-                if m.any():
-                    n = int(m.sum())
-                    out, cpl = draw("target_ppc0", n), draw(key, n)
-                    cpl = np.where(target[None, :, None], cpl, out)
-                    ph = out + w * np.angle(np.exp(1j * (cpl - out)))
-                    data[m] += p["osc_amplitude"] * np.cos(2 * np.pi * p["oscillation_frequency"]
-                                                           * t_ms[None, None, :] / 1000.0 + ph)
+            for sel, key in ((~is_post, "target_ppc0"), (is_post, "target_ppc1")):
+                if sel.any():
+                    n = int(sel.sum())
+                    outside, coupled = draw("target_ppc0", n), draw(key, n)
+                    coupled = np.where(target[None, :, None], coupled, outside)
+                    phase = outside + ramp * np.angle(np.exp(1j * (coupled - outside)))
+                    data[sel] += params["osc_amplitude"] * np.cos(2 * np.pi * params["oscillation_frequency"]
+                                                                  * t_ms[None, None, :] / 1000.0 + phase)
         elif dgp == "hg_envelope":
-            # independent band-limited carriers; on post events the target channels
-            # share one slow (< env_hz) amplitude modulation, otherwise independent
             import mne
             sf = float(eeg.samplerate)
-            carrier = mne.filter.filter_data(np.random.standard_normal(eeg.shape), sf, *p["band"], verbose=False)
+            carrier = mne.filter.filter_data(np.random.standard_normal(eeg.shape), sf, *params["band"], verbose=False)
             # slow envelope filtered on a 2 s-padded segment, then cropped: the low-pass
             # is longer than the shorter clips, so its edges must not reach the clip
             pad = int(2 * sf)
             env = mne.filter.filter_data(np.random.standard_normal((*eeg.shape[:-1], eeg.shape[-1] + 2 * pad)),
-                                         sf, None, p["env_hz"], verbose=False)[..., pad:-pad]
-            # equal_conditions: shared on pre events too (equal coupling, zero contrast)
-            mask = np.ones(eeg.shape[0], bool) if p.get("equal_conditions") else np.asarray(condition_mask, bool)
-            own = env[np.ix_(mask, target)]
-            env[np.ix_(mask, target)] = np.where(win, own[:, :1], own)   # first target channel's envelope, shared
-            env /= np.sqrt(2 * p["env_hz"] / sf)   # ~unit variance; a fixed scale, not the clip's own SD
+                                         sf, None, params["env_hz"], verbose=False)[..., pad:-pad]
+            shared = np.ones(eeg.shape[0], bool) if params.get("equal_conditions") else np.asarray(condition_mask, bool)
+            own_env = env[np.ix_(shared, target)]
+            env[np.ix_(shared, target)] = np.where(active, own_env[:, :1], own_env)   # first target channel's envelope
+            env /= np.sqrt(2 * params["env_hz"] / sf)   # ~unit variance; a fixed scale, not the clip's own SD
             # (per-clip scaling made the longer word-on clip's envelope weaker -> AEC-c biased low)
-            data += p["hg_amplitude"] * carrier * np.exp(p["env_depth"] * env)
+            data += params["hg_amplitude"] * carrier * np.exp(params["env_depth"] * env)
         elif dgp == "leak":
-            # zero-lag common source added to target channels on post events only:
-            # volume conduction; ciPLV and AEC-c should not respond
-            mask = np.asarray(condition_mask, bool)
-            src = _pink((int(mask.sum()), 1, eeg.shape[-1]), p)
-            data[np.ix_(mask, target)] += p["leak_gain"] * src
+            is_post = np.asarray(condition_mask, bool)
+            source = _pink((int(is_post.sum()), 1, eeg.shape[-1]), params)
+            data[np.ix_(is_post, target)] += params["leak_gain"] * source
         else:
             raise ValueError(f"unknown data_generating_process {dgp!r}")
-    if p.get("line_amplitude"):   # mains: one random phase per event, common to all channels
-        ph = np.random.uniform(0, 2 * np.pi, (eeg.shape[0], 1, 1))
-        data += p["line_amplitude"] * np.sin(2 * np.pi * 60.0 * t_ms[None, None, :] / 1000.0 + ph)
+    if params.get("line_amplitude"):   # mains, one phase per event shared by all channels
+        phase = np.random.uniform(0, 2 * np.pi, (eeg.shape[0], 1, 1))
+        data += params["line_amplitude"] * np.sin(2 * np.pi * 60.0 * t_ms[None, None, :] / 1000.0 + phase)
     return eeg.copy(data=data)

@@ -42,8 +42,8 @@ def electrode_table(files: list) -> pd.DataFrame:
         if len(xyz) != len(p["labels"]):
             continue
         roi, resp = fc.roi_of_reg_full(p["reg_full"], lobe_of), responsive(p)
-        for c, lab in enumerate(p["labels"]):
-            rows.append((f.name, str(p["sid"][0]), str(lab), *xyz[c],
+        for c, label in enumerate(p["labels"]):
+            rows.append((f.name, str(p["sid"][0]), str(label), *xyz[c],
                          roi[c].split("-", 1)[1] if roi[c] else "", bool(resp[c]),
                          float(p["cohens_d"][c]), int(p["n_hi"])))
     return pd.DataFrame(rows, columns=["file", "sub", "label", "x", "y", "z", "lobe",
@@ -54,16 +54,16 @@ def coverage(ax_fig: plt.Figure, el: pd.DataFrame, path: str) -> None:
     el = el.drop_duplicates(["sub", "label"]).dropna(subset=["x", "y", "z"])
     from nilearn.datasets import load_mni152_brain_mask
     from scipy.ndimage import distance_transform_edt
-    m = load_mni152_brain_mask(resolution=1)
-    dist = distance_transform_edt(m.get_fdata() == 0)                  # mm outside the brain
+    mask_img = load_mni152_brain_mask(resolution=1)
+    dist = distance_transform_edt(mask_img.get_fdata() == 0)           # mm outside the brain
     xyz = el[["x", "y", "z"]].to_numpy(float)
-    ijk = np.rint(np.c_[xyz, np.ones(len(xyz))] @ np.linalg.inv(m.affine).T)[:, :3].astype(int)
-    out = dist[tuple(np.clip(ijk, 0, np.array(dist.shape) - 1).T)] > MAX_OUTSIDE_MM
-    disp = plotting.plot_glass_brain(None, display_mode="lzr", figure=ax_fig, alpha=0.3)
+    ijk = np.rint(np.c_[xyz, np.ones(len(xyz))] @ np.linalg.inv(mask_img.affine).T)[:, :3].astype(int)
+    outside = dist[tuple(np.clip(ijk, 0, np.array(dist.shape) - 1).T)] > MAX_OUTSIDE_MM
+    display = plotting.plot_glass_brain(None, display_mode="lzr", figure=ax_fig, alpha=0.3)
     for lobe in [""] + fc.LOBES:
-        g = el[(el["lobe"] == lobe) & ~out]
-        disp.add_markers(g[["x", "y", "z"]].to_numpy(float), marker_color=fc.LOBE_COLORS.get(lobe, "0.75"),
-                         marker_size=0.4, alpha=0.35 if lobe else 0.2)
+        lobe_els = el[(el["lobe"] == lobe) & ~outside]
+        display.add_markers(lobe_els[["x", "y", "z"]].to_numpy(float), marker_color=fc.LOBE_COLORS.get(lobe, "0.75"),
+                            marker_size=0.4, alpha=0.35 if lobe else 0.2)
     handles = [plt.Line2D([], [], ls="", marker="o", color=fc.LOBE_COLORS[lobe],
                           label=f"{lobe.capitalize()} ({el.loc[el.lobe == lobe, 'sub'].nunique()} subj., "
                                 f"{(el.lobe == lobe).sum():,} el.)") for lobe in fc.LOBES]
@@ -71,46 +71,46 @@ def coverage(ax_fig: plt.Figure, el: pd.DataFrame, path: str) -> None:
                   bbox_to_anchor=(0.5, -0.16))
     ax_fig.savefig(f"{path}.png", dpi=300, bbox_inches="tight")
     print(f"[coverage] {len(el):,} electrodes, {el['sub'].nunique()} subjects; not drawn (> {MAX_OUTSIDE_MM} mm "
-          f"outside the brain): {out.sum()} from {el.loc[out, 'sub'].nunique()} subjects -> {path}.png")
+          f"outside the brain): {outside.sum()} from {el.loc[outside, 'sub'].nunique()} subjects -> {path}.png")
 
 
 def example(el: pd.DataFrame, files: dict, pick: list | None, path: str) -> None:
     if pick:
         row = el[(el["file"].str.startswith(pick[0] + "_")) & (el["label"] == pick[1])].iloc[0]
     else:
-        cand = el[el.responsive & (el.lobe == "occipital") & (el.n_trials >= MIN_TRIALS_EXAMPLE)]
-        row = cand.loc[cand["cohens_d"].idxmax()]
+        candidates = el[el.responsive & (el.lobe == "occipital") & (el.n_trials >= MIN_TRIALS_EXAMPLE)]
+        row = candidates.loc[candidates["cohens_d"].idxmax()]
     p = fc.load_pickle(str(files[row["file"]]))
-    c = list(map(str, p["labels"])).index(row["label"])
+    ch = list(map(str, p["labels"])).index(row["label"])
     step = float(p["env_step_ms"])
-    on = np.asarray(p["env_hi"], float)[:, c]                        # (E, T), relative to the word-off mean
-    off = np.asarray(p["env_lo"], float)[:, c]
+    on = np.asarray(p["env_hi"], float)[:, ch]                       # (E, T), relative to the word-off mean
+    off = np.asarray(p["env_lo"], float)[:, ch]
     t_on = p["env_hi_t0_ms"] + step * (np.arange(on.shape[-1]) + 0.5)
     t_off = p["env_lo_t0_ms"] + step * (np.arange(off.shape[-1]) + 0.5)
     x, t = response(p)
-    lat, pk = half_max(np.nanmean(x[:, c], 0), t)
+    lat, peak = half_max(np.nanmean(x[:, ch], 0), t)
     base = np.nanmean(off)
 
     fig, ax = plt.subplots(figsize=(3.6, 2.8))
     ax.axvspan(-700, -100, color="#e8b4a0", alpha=0.4, lw=0)
     ax.axvspan(0, 600, color="#a8e6b8", alpha=0.4, lw=0)
-    for tt, e in ((t_off, off), (t_on, on)):
-        m, ci = np.nanmean(e, 0), np.array([fc.mean_ci(col)[1] for col in e.T])
-        ax.fill_between(tt, m - ci, m + ci, color="0.6", lw=0)
-        ax.plot(tt, m, color="k", lw=1.2)
+    for times, env in ((t_off, off), (t_on, on)):
+        mean, ci = np.nanmean(env, 0), np.array([fc.mean_ci(samples)[1] for samples in env.T])
+        ax.fill_between(times, mean - ci, mean + ci, color="0.6", lw=0)
+        ax.plot(times, mean, color="k", lw=1.2)
     ax.axhline(base, color="0.4", lw=0.8, ls=":")
     ax.axvline(0, color="k", lw=0.8)
     ylim = ax.get_ylim()
-    ax.plot([0, lat], [base + pk / 2] * 2, color="tab:red", lw=0.8, ls="--")
-    ax.plot([lat, lat], [ylim[0], base + pk / 2], color="tab:red", lw=0.8, ls="--")
+    ax.plot([0, lat], [base + peak / 2] * 2, color="tab:red", lw=0.8, ls="--")
+    ax.plot([lat, lat], [ylim[0], base + peak / 2], color="tab:red", lw=0.8, ls="--")
     ax.text(-400, ylim[1], "Word off", ha="center", va="top", fontsize=10)
     ax.text(300, ylim[1], "Word on", ha="center", va="top", fontsize=10)
-    ax.text(-10, base + pk / 2, f"half-max\n{lat:.0f} ms", color="tab:red", fontsize=9, ha="right", va="center")
+    ax.text(-10, base + peak / 2, f"half-max\n{lat:.0f} ms", color="tab:red", fontsize=9, ha="right", va="center")
     ax.set_ylim(ylim)
     ax.set(xlabel="Time from word onset (ms)", ylabel="Normalized high-gamma power", xlim=(-700, 1000))
     ax.spines[["top", "right"]].set_visible(False)
     fig.savefig(f"{path}.png", dpi=300, bbox_inches="tight")
-    print(f"[example] {row['file']} {row['label']} ({p['reg_full'][c]}), d = {row['cohens_d']:.2f}, "
+    print(f"[example] {row['file']} {row['label']} ({p['reg_full'][ch]}), d = {row['cohens_d']:.2f}, "
           f"{len(on)} trials, half-max {lat:.0f} ms -> {path}.png")
 
 

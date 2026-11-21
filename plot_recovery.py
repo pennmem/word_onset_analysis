@@ -40,24 +40,24 @@ KIND = {"hg_power": ("power", "high_gamma", None), "osc_lag": ("ciPLV", "alpha",
 
 def session_values(root, tag):
     """[(target, other)] per session: mean measured effect on / off the plant."""
-    p = simulation_parameters[tag]
-    _, band, metric = KIND[p["data_generating_process"]]
+    params = simulation_parameters[tag]
+    _, band, metric = KIND[params["data_generating_process"]]
     sim_root = join(root, "sim", tag)
     out = []
     if metric is None:
         for f in fc.session_files(power_dir(sim_root, BEH, band), "_power.pkl"):
-            d = fc.load_pickle(str(f))
-            m = np.isin(_channel_lobes(d["reg_full"]), p["target_lobes"])
-            db = (20 if d.get("measure") == "amplitude" else 10) * np.log10(d["pow_hi"] / d["pow_lo"])
-            out.append((np.nanmean(db[m]), np.nanmean(db[~m])))
+            res = fc.load_pickle(str(f))
+            target = np.isin(_channel_lobes(res["reg_full"]), params["target_lobes"])
+            db = (20 if res.get("measure") == "amplitude" else 10) * np.log10(res["pow_hi"] / res["pow_lo"])
+            out.append((np.nanmean(db[target]), np.nanmean(db[~target])))
     else:
         for f in fc.session_files(cond_dir(sim_root, BEH, "diff", band), "_fc_mats.pkl"):
-            d = fc.load_pickle(str(f))
-            m = np.isin(_channel_lobes(d["reg_full"]), p["target_lobes"])
-            M = fc.symmetrize_dense(np.asarray(d[metric], float), diag_value=np.nan)
-            tt, oo = np.outer(m, m), ~np.outer(m, m)
-            np.fill_diagonal(tt, False); np.fill_diagonal(oo, False)
-            out.append((np.nanmean(M[tt]), np.nanmean(M[oo])))
+            res = fc.load_pickle(str(f))
+            target = np.isin(_channel_lobes(res["reg_full"]), params["target_lobes"])
+            mat = fc.symmetrize_dense(np.asarray(res[metric], float), diag_value=np.nan)
+            target_pairs, other_pairs = np.outer(target, target), ~np.outer(target, target)
+            np.fill_diagonal(target_pairs, False); np.fill_diagonal(other_pairs, False)
+            out.append((np.nanmean(mat[target_pairs]), np.nanmean(mat[other_pairs])))
     return np.array(out)
 
 
@@ -80,25 +80,27 @@ def synthetic_clips(d, events, window, buf, sim):
 def noise_free(root, sid, tag):
     """Target-pair mean of the metric on one session's planted signal alone (pink noise off)."""
     fc.root_dir = helper.root_dir = root
-    p = simulate_eeg.simulation_parameters[tag]   # the module's dict (a global here is pickled as a copy)
-    _, band, metric = KIND[p["data_generating_process"]]
-    p["pinknoise_amplitude"] = 0   # this worker's process only
-    d = fc.dfrow_from_sid(sid)
-    ev, pairs = fc.load_events(d, BEH), helper.get_pairs(d)
-    M = fc.compute_prepost_separate(d, BEH, ev, [metric], *fc.bands[band], fc.make_overlap_mask(pairs, n_ch=len(pairs)),
-                                    fc.REAL_DATA_BUFFER_MS, simulation_tag=tag, load_fn=synthetic_clips)[metric]["diff"]
-    m = np.isin(_channel_lobes(fc.session_regions(d["sub"], d["exp"], str(d["sess"]))), p["target_lobes"])
-    M = fc.symmetrize_dense(np.asarray(np.squeeze(M), float), diag_value=np.nan)
-    tt = np.outer(m, m); np.fill_diagonal(tt, False)
-    return {"tag": tag, "sid": str(sid), "true": np.nanmean(M[tt])}
+    params = simulate_eeg.simulation_parameters[tag]   # the module's dict (a global here is pickled as a copy)
+    _, band, metric = KIND[params["data_generating_process"]]
+    params["pinknoise_amplitude"] = 0   # this worker's process only
+    dfrow = fc.dfrow_from_sid(sid)
+    events, pairs = fc.load_events(dfrow, BEH), helper.get_pairs(dfrow)
+    mat = fc.compute_prepost_separate(dfrow, BEH, events, [metric], *fc.bands[band],
+                                      fc.make_overlap_mask(pairs, n_ch=len(pairs)), fc.REAL_DATA_BUFFER_MS,
+                                      simulation_tag=tag, load_fn=synthetic_clips)[metric]["diff"]
+    target = np.isin(_channel_lobes(fc.session_regions(dfrow["sub"], dfrow["exp"], str(dfrow["sess"]))),
+                     params["target_lobes"])
+    mat = fc.symmetrize_dense(np.asarray(np.squeeze(mat), float), diag_value=np.nan)
+    target_pairs = np.outer(target, target); np.fill_diagonal(target_pairs, False)
+    return {"tag": tag, "sid": str(sid), "true": np.nanmean(mat[target_pairs])}
 
 
 def truth(root, tags):
     """{tag: mean noise-free value over N_TRUTH sessions (first session of the first subjects)}."""
-    have = pd.read_csv(TRUTH_CSV) if exists(TRUTH_CSV) else pd.DataFrame(columns=["tag", "sid", "true"])
+    cached = pd.read_csv(TRUTH_CSV) if exists(TRUTH_CSV) else pd.DataFrame(columns=["tag", "sid", "true"])
     jobs = []
     for tag in tags:
-        if (have["tag"] == tag).sum() >= N_TRUTH:
+        if (cached["tag"] == tag).sum() >= N_TRUTH:
             continue
         _, band, _ = KIND[simulation_parameters[tag]["data_generating_process"]]
         first = {}
@@ -107,16 +109,16 @@ def truth(root, tags):
             first.setdefault(sid[0], sid)
         jobs += [(tag, sid) for sid in list(first.values())[:N_TRUTH]]
     if jobs:
-        new = Parallel(n_jobs=5)(delayed(noise_free)(root, sid, tag) for tag, sid in jobs)   # ~6 GB each
-        have = pd.concat([have[~have["tag"].isin({t for t, _ in jobs})], pd.DataFrame(new)])
+        computed = Parallel(n_jobs=5)(delayed(noise_free)(root, sid, tag) for tag, sid in jobs)   # ~6 GB each
+        cached = pd.concat([cached[~cached["tag"].isin({t for t, _ in jobs})], pd.DataFrame(computed)])
         os.makedirs(os.path.dirname(TRUTH_CSV), exist_ok=True)
-        have.to_csv(TRUTH_CSV, index=False)
-    return have.groupby("tag")["true"].mean().to_dict()
+        cached.to_csv(TRUTH_CSV, index=False)
+    return cached.groupby("tag")["true"].mean().to_dict()
 
 
 def planted(tag):
-    p = simulation_parameters[tag]
-    return 20 * np.log10(p["planted"]) if p.get("data_generating_process") == "hg_power" else p["planted"]
+    params = simulation_parameters[tag]
+    return 20 * np.log10(params["planted"]) if params.get("data_generating_process") == "hg_power" else params["planted"]
 
 
 def main():
@@ -129,9 +131,9 @@ def main():
     for sweep, tags in SWEEPS.items():
         kinds[KIND[simulation_parameters[tags[0]]["data_generating_process"]][0]][1].append((sweep, tags))
 
-    true = truth(args.root_dir, [t for tags in SWEEPS.values() for t in tags
-                                 if simulation_parameters[t]["data_generating_process"] != "hg_power"
-                                 and len(session_values(args.root_dir, t))])
+    true_vals = truth(args.root_dir, [t for tags in SWEEPS.values() for t in tags
+                                      if simulation_parameters[t]["data_generating_process"] != "hg_power"
+                                      and len(session_values(args.root_dir, t))])
     kinds = {k: v for k, v in kinds.items()   # only the sweeps that were run
              if any(len(session_values(args.root_dir, t)) for _, tags in v[1] for t in tags)}
     fig, axes = plt.subplots(1, len(kinds), figsize=(6.5 * len(kinds), 5), squeeze=False)
@@ -139,17 +141,17 @@ def main():
     for ax, (kind, (ylab, sweeps)) in zip(axes, kinds.items()):
         lim = [np.inf, -np.inf]
         for sweep, tags in sweeps:
-            x = np.array([planted(t) if kind == "power" else true.get(t, np.nan) for t in tags])
-            v = [session_values(args.root_dir, t) for t in tags]
-            if not any(len(s) for s in v):   # sweep not run (e.g. no synchrony under longetal)
+            x = np.array([planted(t) if kind == "power" else true_vals.get(t, np.nan) for t in tags])
+            sess_vals = [session_values(args.root_dir, t) for t in tags]
+            if not any(len(s) for s in sess_vals):   # sweep not run (e.g. no synchrony under longetal)
                 continue
             noise = sweep.split("_")[-1] if sweep.endswith(("noisy", "clean")) else ""
-            for col, lab, ls in ((0, f"Frontal-frontal pairs (planted) {noise}", "-"),
+            for col, label, ls in ((0, f"Frontal-frontal pairs (planted) {noise}", "-"),
                                  (1, f"All other pairs (nothing planted) {noise}", ":")):
-                y = np.array([np.nanmean(s[:, col]) if len(s) else np.nan for s in v])   # NaN: session without target pairs
-                e = np.array([np.nanstd(s[:, col], ddof=1) / np.sqrt(np.isfinite(s[:, col]).sum())
-                              if len(s) > 1 else np.nan for s in v])
-                ax.errorbar(x, y, yerr=e, marker="o", ls=ls, capsize=3, label=lab)
+                y = np.array([np.nanmean(s[:, col]) if len(s) else np.nan for s in sess_vals])   # NaN: session without target pairs
+                sem = np.array([np.nanstd(s[:, col], ddof=1) / np.sqrt(np.isfinite(s[:, col]).sum())
+                                if len(s) > 1 else np.nan for s in sess_vals])
+                ax.errorbar(x, y, yerr=sem, marker="o", ls=ls, capsize=3, label=label)
             lim = [min(lim[0], np.nanmin(x)), max(lim[1], np.nanmax(x))]
         if not np.isfinite(lim[0]):   # nothing run for this kind
             ax.set_visible(False)
