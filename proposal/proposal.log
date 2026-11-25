@@ -311,9 +311,9 @@ File: img/variance_components_power.png Graphic file (type bmp)
 File: img/fig1c_single_subject.png Graphic file (type bmp)
 <img/fig1c_single_subject.png>
 LaTeX Font Info:    External font `cmex10' loaded for size
-(Font)              <7> on input line 102.
+(Font)              <7> on input line 101.
 LaTeX Font Info:    External font `cmex10' loaded for size
-(Font)              <5> on input line 102.
+(Font)              <5> on input line 101.
 
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
@@ -327,7 +327,7 @@ File: img/fig2c_propagation_shift.png Graphic file (type bmp)
 File: img/fig4d_amp_latency.png Graphic file (type bmp)
 <img/fig4d_amp_latency.png>
 
-LaTeX Warning: Float too large for page by 10.5644pt on input line 113.
+LaTeX Warning: Float too large for page by 46.5644pt on input line 112.
 
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
@@ -345,8 +345,8 @@ File: img/fig3e_isi_hist.png Graphic file (type bmp)
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
-File: img/fig4_recall_model.png Graphic file (type bmp)
-<img/fig4_recall_model.png>
+File: img/fig4_recall_sme.png Graphic file (type bmp)
+<img/fig4_recall_sme.png>
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
@@ -357,14 +357,12 @@ File: img/alpha_hg_across_electrodes.png Graphic file (type bmp)
 <img/alpha_hg_across_electrodes.png>
 File: img/figS2_offset_prev.png Graphic file (type bmp)
 <img/figS2_offset_prev.png>
-File: img/fig2c_subregion_waveforms.png Graphic file (type bmp)
-<img/fig2c_subregion_waveforms.png>
 
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
-File: img/fig6c_epochs_alpha.png Graphic file (type bmp)
-<img/fig6c_epochs_alpha.png>
+File: img/fig2c_subregion_waveforms.png Graphic file (type bmp)
+<img/fig2c_subregion_waveforms.png>
 
 LaTeX Warning: `!h' float specifier changed to `!ht'.
 
@@ -376,4 +374,4 @@ LaTeX Warning: `!h' float specifier changed to `!ht'.
 Package rerunfilecheck Info: File `proposal.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
  )
-Output written on proposal.xdv (10 pages, 132532 bytes).
+Output written on proposal.xdv (10 pages, 143492 bytes).

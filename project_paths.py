@@ -44,8 +44,7 @@ def _resolve_paths(raw: Dict[str, Any]) -> Dict[str, Path]:
     template_vars = {"USER": os.environ.get("USER") or getpass.getuser(), "REPO_ROOT": str(REPO_ROOT)}
     if "scratch_dir" not in raw:
         raise KeyError("config/config.yaml `paths:` block is missing `scratch_dir`")
-    suffix = ((".longetal" if os.environ.get("WOA_LONGETAL") else "")      # both set by the Snakefile
-             + (".smokescreen" if os.environ.get("WOA_SMOKESCREEN") else ""))
+    suffix = ".longetal" if os.environ.get("WOA_LONGETAL") else ""   # set by the Snakefile; smokescreen reads the full cache
     scratch_dir = Template(str(raw["scratch_dir"])).safe_substitute(template_vars) + suffix   # ${SCRATCH_DIR} users follow
     template_vars["SCRATCH_DIR"] = str(_abs(scratch_dir))
     resolved = {k: _abs(Template(str(v)).safe_substitute(template_vars)) for k, v in raw.items()}

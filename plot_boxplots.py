@@ -1,6 +1,7 @@
 """plot_boxplots.py -- word on vs word off per Burke ROI, alpha and high gamma rows.
 
-  power      per-electrode Cohen's d of band power (compute.py power pickles)
+  power      per-electrode Cohen's d of band power (compute.py power pickles; events and units as
+             plot_variance_structure.py: mean of the usable events' power responses)
              -> figures/burke_roi_power/roi_power_word_on(_sem).png
   synchrony  per-electrode mean on - off change over all partners (fc.electrode_sync,
              as Rao et al. 2025): alpha ciPLV, high-gamma AEC-c
@@ -22,24 +23,30 @@ from tqdm.auto import tqdm
 
 import fc_comparison_functions as fc
 import helper
-from compute import cond_dir, power_dir
+from compute import cond_dir
+from plot_variance_structure import power_response, usable_sessions
 
 BEH, BANDS = "word_on", ("alpha", "high_gamma")
 MEASURES = ("cohens_d", "change_dB")
 
 
-def power_table(save_root: str, band: str, lobe_of: dict, n_sessions=None) -> pd.DataFrame:
-    """Per (subject, electrode): word-off / word-on power and Cohen's d, sessions averaged."""
-    rows = []
-    for f in tqdm(fc.session_files(power_dir(save_root, BEH, band), "_power.pkl", n_sessions), desc=f"power {band}"):
-        p = fc.load_pickle(str(f))
-        roi = fc.roi_of_reg_full(p["reg_full"], lobe_of)
-        rows += [(str(p["sid"][0]), str(label), r, str(fine), float(lo), float(hi), float(d))
-                 for label, r, fine, lo, hi, d in zip(p["labels"], roi, p["reg_full"], p["pow_lo"], p["pow_hi"], p["cohens_d"])
-                 if r is not None and np.isfinite(lo) and np.isfinite(hi)]
-    df = pd.DataFrame(rows, columns=["sub", "label", "roi", "fine", "lo", "hi", "cohens_d"])
-    df = df.groupby(["sub", "label", "roi", "fine"], as_index=False)[["lo", "hi", "cohens_d"]].mean()
-    return df.assign(change_dB=10 * np.log10(df["hi"] / df["lo"]))
+def power_tables(save_root: str, lobe_of: dict) -> dict[str, pd.DataFrame]:
+    """{band: per (subject, electrode) ISI / event power and Cohen's d over the usable events, sessions averaged}."""
+    rows = {band: [] for band in BANDS}
+    for pkls, usable in usable_sessions(save_root):
+        for band, p in pkls.items():
+            roi = fc.roi_of_reg_full(p["reg_full"], lobe_of)
+            lo, hi, d = (np.nanmean(np.where(usable, v, np.nan), 0) for v in
+                         (np.asarray(p["trial_pow_lo"], float), np.asarray(p["trial_pow_hi"], float), power_response(p)))
+            rows[band] += [(str(p["sid"][0]), str(label), r, str(fine), *vals)
+                           for label, r, fine, *vals in zip(p["labels"], roi, p["reg_full"], lo, hi, d)
+                           if r is not None and np.isfinite(vals[0]) and np.isfinite(vals[1])]
+    tables = {}
+    for band, band_rows in rows.items():
+        df = pd.DataFrame(band_rows, columns=["sub", "label", "roi", "fine", "lo", "hi", "cohens_d"])
+        df = df.groupby(["sub", "label", "roi", "fine"], as_index=False)[["lo", "hi", "cohens_d"]].mean()
+        tables[band] = df.assign(change_dB=10 * np.log10(df["hi"] / df["lo"]))
+    return tables
 
 
 def sync_table(save_root: str, band: str, metric: str, lobe_of: dict, n_sessions=None) -> pd.DataFrame:
@@ -67,8 +74,7 @@ def main() -> None:
     delta_label = f"({con['delta_label']})"
     if "power" in args.measure:
         fig_dir, stem = join(args.out_dir, "burke_roi_power"), f"roi_power_{BEH}_{{band}}"
-        for band in BANDS:
-            el = power_table(save_root, band, lobe_of, args.n_sessions)
+        for band, el in power_tables(save_root, lobe_of).items():
             sub_roi = fc.subject_roi_means(el, list(MEASURES), min_electrodes=args.min_electrodes)
             stats = {m: fc.roi_stats(sub_roi, m) for m in MEASURES}
             fc.print_roi_stats(stats["cohens_d"], f"{band} power, Cohen's d {delta_label}:")

@@ -1,18 +1,16 @@
 """plot_epoch_network.py -- time-resolved synchrony network (Rao et al. 2025 hubs,
-Solomon et al. 2017 style), alpha ciPLV and high-gamma AEC-c rows, 200 ms epochs.
+Solomon et al. 2017 style), alpha ciPLV and high-gamma AEC-c, 200 ms epochs.
 
 Per subject and region pair, the mean per-epoch change (epoch minus the mean of
 three word-off epochs; compute.py) over the pair's electrode pairs. Hubs (Rao et al.
 2025): a region's mean change over its connections (pairs with >= MIN_SUBJECTS_PAIR
 subjects), one-sample t vs 0 across subjects, Holm over regions x epochs (each hub x
 epoch is reported as its own result); edges: each hub's top-5 connections
-(fc.epoch_network_figure). 12 ROIs, and the fine anatomical regions within them.
-Supplement (12 ROIs): relative hubs, a region's mean change minus that over all
-connections not involving it (stands out from the network-wide change), as a
-ROI x epoch t map, Holm.
--> figures/burke_roi_synchrony/roi_synchrony_epochs_(fine_)word_on.png
-   (+ roi_synchrony_epochs_word_on_alpha.png: alpha only, two rows;
-    roi_synchrony_epochs_word_on_relative.png: relative hubs)
+(fc.epoch_network_figure; alpha only), 12 ROIs. Supplement: relative hubs, a region's
+mean change minus that over all connections not involving it (stands out from the
+network-wide change), as a ROI x epoch t map, Holm.
+-> figures/burke_roi_synchrony/roi_synchrony_epochs_word_on_alpha.png (windows in two rows),
+   roi_synchrony_epochs_word_on_relative.png (relative hubs)
 
     python plot_epoch_network.py [--simulation-tag TAG]
 """
@@ -30,9 +28,9 @@ from compute import cond_dir
 BEH, BANDS = "word_on", ("alpha", "high_gamma")
 
 
-def epoch_table(save_root: str, band: str, metric: str, lobe_of: dict, n_sessions=None, fine: bool = False):
+def epoch_table(save_root: str, band: str, metric: str, lobe_of: dict, n_sessions=None):
     """(per subject x region pair 'a|b' x epoch start mean change, region centroids
-    = mean MNI of their electrodes, with lobe). Regions: 12 ROIs or (fine) reg_full labels."""
+    = mean MNI of their electrodes, with lobe). Regions: 12 ROIs."""
     rows, xyz_rows = [], []
     for f in fc.session_files(cond_dir(save_root, BEH, "diff", band), "_fc_mats.pkl", n_sessions):
         mat = fc.load_pickle(str(f))
@@ -42,8 +40,6 @@ def epoch_table(save_root: str, band: str, metric: str, lobe_of: dict, n_session
         xyz, _ = fc.pair_xyz_lead(fc.dfrow_from_sid(mat["sid"]))
         roi = fc.roi_of_reg_full(mat["reg_full"], lobe_of, pool=False)
         lobe = [r and r.split("-", 1)[1] for r in roi]
-        if fine:
-            roi = [reg if r is not None else None for reg, r in zip(mat["reg_full"], roi)]
         el_a, el_b = np.triu_indices(len(roi), 1)
         both_in_roi = np.array([roi[i] is not None and roi[j] is not None for i, j in zip(el_a, el_b)], bool)
         el_a, el_b = el_a[both_in_roi], el_b[both_in_roi]
@@ -76,10 +72,10 @@ def hubs(etbl: pd.DataFrame, relative: bool = False) -> pd.DataFrame:
     return fc.bin_stats(pd.concat(per_region), "epoch_ms", "sync_diff", fdr="holm")
 
 
-def network_csvs(save_root, band, metric, path, lobe_of, n_sessions, fine, tag) -> pd.DataFrame:
+def network_csvs(save_root, band, metric, path, lobe_of, n_sessions, tag) -> pd.DataFrame:
     """Write <path>_stats / _centroids / _hubs.csv for one row of the network figure;
-    returns the relative hubs (written to <path>_hubs_relative.csv) for the 12 ROIs."""
-    etbl, centroids = epoch_table(save_root, band, metric, lobe_of, n_sessions, fine)
+    returns the relative hubs (written to <path>_hubs_relative.csv)."""
+    etbl, centroids = epoch_table(save_root, band, metric, lobe_of, n_sessions)
     fc.bin_stats(etbl, "epoch_ms", "sync_diff", min_subjects=fc.MIN_SUBJECTS_PAIR).to_csv(
         fc.table_path(f"{path}_stats.csv"), index=False)
     centroids.to_csv(fc.table_path(f"{path}_centroids.csv"))
@@ -87,11 +83,10 @@ def network_csvs(save_root, band, metric, path, lobe_of, n_sessions, fine, tag) 
     hub.to_csv(fc.table_path(f"{path}_hubs.csv"), index=False)
     print(f"[epochs {tag}] {int(hub['t'].notna().sum() / len(fc.EPOCHS))} regions tested, "
           f"{int((hub['q'] < 0.05).sum())} hub x epoch cells at Holm p < .05")
-    if not fine:
-        rel = hubs(etbl, relative=True)
-        rel.to_csv(fc.table_path(f"{path}_hubs_relative.csv"), index=False)
-        print(f"[epochs {tag} relative] {int((rel['q'] < 0.05).sum())} cells at Holm p < .05")
-        return rel
+    rel = hubs(etbl, relative=True)
+    rel.to_csv(fc.table_path(f"{path}_hubs_relative.csv"), index=False)
+    print(f"[epochs {tag} relative] {int((rel['q'] < 0.05).sum())} cells at Holm p < .05")
+    return rel
 
 
 def relative_figure(rel: dict, stem: str) -> None:
@@ -121,19 +116,15 @@ def main() -> None:
     lobe_of = fc.load_burke_maps()
     con = fc.contrast(BEH)
     os.makedirs(args.out_dir, exist_ok=True)
-    for level, fine in (("", False), ("fine_", True)):
-        stem = f"roi_synchrony_epochs_{level}{BEH}_{{band}}_{{metric}}"
-        rel = {}
-        for band in BANDS:
-            metric = fc.RUN_METRIC[band]
-            rel[band] = network_csvs(save_root, band, metric, join(args.out_dir, stem.format(band=band, metric=metric)),
-                                     lobe_of, args.n_sessions, fine, f"{level or 'roi_'}{band}")
-        if not fine:
-            relative_figure(rel, join(args.out_dir, f"roi_synchrony_epochs_{BEH}_relative"))
-        fc.epoch_network_figure(args.out_dir, stem, f"{{metric}} ({con['delta_label']})")
-        if not fine:   # paper: alpha only, windows in two rows
-            fc.epoch_network_figure(args.out_dir, stem, f"{{metric}} ({con['delta_label']})",
-                                    only=("alpha",), ncols=5, tag="_alpha")
+    stem = f"roi_synchrony_epochs_{BEH}_{{band}}_{{metric}}"
+    rel = {}
+    for band in BANDS:
+        metric = fc.RUN_METRIC[band]
+        rel[band] = network_csvs(save_root, band, metric, join(args.out_dir, stem.format(band=band, metric=metric)),
+                                 lobe_of, args.n_sessions, f"roi_{band}")
+    relative_figure(rel, join(args.out_dir, f"roi_synchrony_epochs_{BEH}_relative"))
+    fc.epoch_network_figure(args.out_dir, stem, f"{{metric}} ({con['delta_label']})",   # paper: alpha only, windows in two rows
+                            only=("alpha",), ncols=5, tag="_alpha")
 
 
 if __name__ == "__main__":

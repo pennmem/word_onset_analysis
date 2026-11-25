@@ -209,6 +209,21 @@ in the proposal text. Every model or analysis choice and its run cost goes to th
 - **Frontal alpha power increase**: check evoked contribution and fine-region breakdown.
 
 ## Methods notes / deviations to report
+- Fig. 2D (2026-11-24): power vs latency at the same electrode is now r -0.06 to -0.17 (was ~0 with the half-max
+  peak). Part may be built in: the power window ends at 600 ms, so a later response loses power to the window, and
+  one noisy curve sets both measures. Between electrode halves (noise ceiling) the link is -0.14 to 0.00. Check with
+  a 0-1000 ms window before the paper.
+- Our settings vs DeHaan 2026 ch. 3 (user 2026-11-24: keep ours, from the FC comparison project; give the reasons in
+  the methods): 6 lobes (PI) vs 11 gyral regions; high gamma only (8 x 10 Hz Hilbert sub-bands, 70-150 Hz) vs 8
+  Morlet 3-180 Hz; event 0-600 vs 0-1366 ms; ISI -700..-100 vs -700..-50 ms with a 400 ms mirror buffer; no serial
+  position 1; power in Cohen's d units vs log power z-scored within session (his units: `sme_stats_logz.csv`, same
+  pattern); 10-MAD event outliers vs invalid-list exclusion; pyFR included (one behavioural model per experiment).
+- Latency variance shares (Fig. 2A, components.csv, fit 2026-11-13) used events whose own half-max latency was also
+  defined (trials.csv then had both columns); the cross-correlation-only trials.csv keeps events with peak <= 0 too.
+  Refit latency (`--refit`, ~hours) before the paper.
+- Paper scripts (`plot_latency.py`, `plot_anticipation.py`, `plot_spectrum.py`, `plot_decoding.py`,
+  `plot_reliability.py`, `plot_epoch_network.py`) still use all cached events and half-max latency; move them onto
+  `event_mask` when the paper resumes.
 - Region-pair floor 100 subjects (MIN_SUBJECTS_PAIR, as riley-thesis).
 - Synchrony includes within-region pairs (contact-sharing pairs excluded).
 - Localization caveats (Riley): grids/strips before ~R1350 not brain-shift corrected;

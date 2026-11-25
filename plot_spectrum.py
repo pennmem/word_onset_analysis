@@ -47,11 +47,6 @@ def subject_table(d: pd.DataFrame, col: str, min_electrodes: int) -> pd.DataFram
     return per_sub
 
 
-def bin_t(d: pd.DataFrame, col: str, min_electrodes: int) -> pd.DataFrame:
-    """t per region x bin, BH-FDR over all cells (fc.bin_stats)."""
-    return fc.bin_stats(subject_table(d, col, min_electrodes), "freq_hz", "d")
-
-
 def outline(ax, sig: np.ndarray) -> None:
     """Border around connected significant cells: every cell edge between a significant
     cell and a non-significant (or missing) neighbour."""

@@ -3,8 +3,7 @@
 #   Rscript mixed_models.R latency results/latency/hg_latency_word_on_electrodes.csv
 #   Rscript mixed_models.R bands   results/burke_roi_power/roi_power_word_on_alpha_per_electrode.csv
 #                                  (the high-gamma CSV is read from the same place)
-#   Rscript mixed_models.R variance results/variance_structure [cores]
-#   Rscript mixed_models.R blank    results/variance_structure [cores]   (both run by plot_variance_structure.py)
+#   Rscript mixed_models.R variance results/variance_structure [cores]   (plot_variance_structure.py)
 #   Rscript mixed_models.R single   results/single_subject [cores]       (plot_variance_structure.py --single)
 #   Rscript mixed_models.R recall   results/recall [cores]               (plot_variance_structure.py --recall)
 #
@@ -67,12 +66,10 @@ if (mode == "latency") {
   fits <- mclapply(seq_len(nrow(jobs)), function(i) {
     lobe_name <- jobs$lobe[i]; band <- jobs$band[i]
     rows <- trials[lobe == lobe_name & is.finite(get(band)) & (band == "latency" | in_power)]   # latency: its own electrodes
-    outcome <- if (band == "latency") "latency_xc" else band
-    rows <- rows[is.finite(get(outcome))]
     if (uniqueN(rows$subject) < 5) return(NULL)
     start <- Sys.time()
     region_term <- if (uniqueN(rows$region) >= 2) "+ (1 | region)" else ""
-    model <- tryCatch(lmer(as.formula(paste(outcome, "~", rand, region_term)), data = rows,
+    model <- tryCatch(lmer(as.formula(paste(band, "~", rand, region_term)), data = rows,
                            control = lmerControl(optimizer = "bobyqa", calc.derivs = FALSE)),
                       error = function(e) { message(lobe_name, " ", band, ": ", conditionMessage(e)); NULL })
     if (is.null(model)) return(NULL)
@@ -81,39 +78,6 @@ if (mode == "latency") {
                                                                        nsub = uniqueN(rows$subject), nel = uniqueN(rows$electrode))]
   }, mc.cores = min(nrow(jobs), cores))
   fwrite(rbindlist(Filter(is.data.frame, fits)), file.path(path, "components.csv"))
-} else if (mode == "blank") {
-  # per lobe and band: y ~ prev_resp + prev2_resp + blank_len + prev_resp:blank_len + rand. prev_resp / prev2_resp:
-  # the response 1 / 2 words back (same electrode and list), z within electrode-session; blank_len: ISI, z within
-  # session. No electrode:list term: with ~11 words a list it biases a lagged slope by ~1/11 (Nickell 1981).
-  suppressMessages(library(parallel))
-  trials <- fread(file.path(path, "trials.csv"))[in_power == TRUE]
-  setorder(trials, electrode, session, event)
-  zscore <- function(v) (v - mean(v, na.rm = TRUE)) / sd(v, na.rm = TRUE)
-  for (band in c("alpha", "high_gamma")) for (back in 1:2)
-    trials[, paste0(band, "_prev", back) := zscore(fifelse(shift(event, back) == event - back & shift(list, back) == list,
-                                                           shift(get(band), back), NA_real_)),
-           by = .(electrode, session)]
-  isi_min <- c("750-1000" = 750, "800-1200" = 800); isi_max <- c("750-1000" = 1000, "800-1200" = 1200)
-  trials <- trials[is.finite(blank_ms) & blank_ms >= isi_min[design] - 40 & blank_ms <= isi_max[design] + 40]   # screen-timing slop
-  trials[, blank_len := zscore(blank_ms), by = session]
-  add_terms(trials)
-  jobs <- CJ(lobe = unique(trials$lobe), band = c("alpha", "high_gamma"))
-  fits <- mclapply(seq_len(nrow(jobs)), function(i) {
-    lobe_name <- jobs$lobe[i]; band <- jobs$band[i]
-    rows <- trials[lobe == lobe_name & is.finite(get(band))]
-    rows[, `:=`(prev_resp = get(paste0(band, "_prev1")), prev2_resp = get(paste0(band, "_prev2")))]
-    rows <- rows[is.finite(prev_resp) & is.finite(prev2_resp)]
-    if (uniqueN(rows$subject) < 5) return(NULL)
-    start <- Sys.time()
-    model <- tryCatch(lmer(as.formula(paste(band, "~ prev_resp + prev2_resp + blank_len + prev_resp:blank_len +", rand)),
-                           data = rows, control = lmerControl(optimizer = "bobyqa", calc.derivs = FALSE)),
-                      error = function(e) { message(lobe_name, " ", band, ": ", conditionMessage(e)); NULL })
-    if (is.null(model)) return(NULL)
-    message(lobe_name, " ", band, ": ", nrow(rows), " rows, ", fit_minutes(start), " min")
-    data.table(term = names(fixef(model)), est = fixef(model), se = sqrt(diag(as.matrix(vcov(model)))), lobe = lobe_name,
-               band = band, n = nrow(rows), nsub = uniqueN(rows$subject), nel = uniqueN(rows$electrode))
-  }, mc.cores = min(nrow(jobs), cores))
-  fwrite(rbindlist(Filter(is.data.frame, fits)), file.path(path, "blank_fixed.csv"))
 } else if (mode == "single") {
   # the variance model within one subject (Riley), occipital, all the subject's electrodes; subjects with >= 5
   # electrodes and >= 2 sessions; (1|region) where the subject has >= 2 subregions
@@ -137,21 +101,24 @@ if (mode == "latency") {
   }, mc.cores = cores)
   fwrite(rbindlist(Filter(is.data.frame, fits)), file.path(path, "components_single.csv"))
 } else if (mode == "recall") {
-  # per lobe: recalled ~ word_power + isi_power + latency + DeHaan's 10 task terms (logistic)
+  # DeHaan 2026 ch. 3.4.3 / 3.4.8: per experiment, recalled ~ his 10 task terms (logistic); predicted recall per event
+  # from the terms he kept for the offsets (Item, SP, List, Subject, List:SP, Subject:Session, Subject:SP)
   suppressMessages(library(parallel))
-  words <- add_terms(fread(file.path(path, "recall.csv")))
-  words <- words[is.finite(recalled) & is.finite(word_power) & is.finite(isi_power) & is.finite(latency)]
+  words <- fread(file.path(path, "behaviour.csv"))[is.finite(recalled)][, event_index := event]
+  words <- add_terms(words)
   task_terms <- gsub("\\s*\\+ \\(1 \\| (electrode|elsess|event)\\)", "", rand)
-  fits <- mclapply(unique(words$lobe), function(lobe_name) {
-    rows <- words[lobe == lobe_name]
+  offset_terms <- c("item", "sp", "list", "subject", "list_sp", "session", "subj_sp")
+  fits <- mclapply(unique(words$experiment), function(experiment_name) {
+    rows <- words[experiment == experiment_name]
     start <- Sys.time()
-    model <- tryCatch(glmer(as.formula(paste("recalled ~ word_power + isi_power + latency +", task_terms)), data = rows,
-                            family = binomial, nAGQ = 0, control = glmerControl(optimizer = "bobyqa", calc.derivs = FALSE)),
-                      error = function(e) { message(lobe_name, ": ", conditionMessage(e)); NULL })
+    model <- tryCatch(glmer(as.formula(paste("recalled ~", task_terms)), data = rows, family = binomial,
+                            control = glmerControl(optimizer = "bobyqa", calc.derivs = FALSE)),
+                      error = function(e) { message(experiment_name, ": ", conditionMessage(e)); NULL })
     if (is.null(model)) return(NULL)
-    message(lobe_name, ": ", nrow(rows), " rows, ", fit_minutes(start), " min")
-    data.table(term = names(fixef(model)), est = fixef(model), se = sqrt(diag(as.matrix(vcov(model)))), lobe = lobe_name,
-               n = nrow(rows), nsub = uniqueN(rows$subject))
+    message(experiment_name, ": ", nrow(rows), " events, ", fit_minutes(start), " min")
+    intercepts <- ranef(model)
+    logit <- fixef(model)[1] + Reduce(`+`, lapply(offset_terms, function(term) intercepts[[term]][as.character(rows[[term]]), 1]))
+    rows[, .(session, event = event_index, phat = plogis(logit))]
   }, mc.cores = cores)
-  fwrite(rbindlist(Filter(is.data.frame, fits)), file.path(path, "recall_fixed.csv"))
+  fwrite(rbindlist(Filter(is.data.frame, fits)), file.path(path, "recall_phat.csv"))
 }

@@ -96,10 +96,10 @@ computation_metrics: [coh, plv, ppc, ciplv, pli, wpli, aec_c]
 subtract_erp: false
 
 # ─── Snakefile ──────────────────────────────────────────────────────────────
-# smokescreen: true -> first N subjects; scratch, exclusion logs and figures go
-#   to *.smokescreen so a smoke run never feeds the full run's cache.
+# smokescreen: true -> the plot stages on smokescreen_n_subjects random subjects (seed 0) of the existing
+#   compute cache (no download / compute); figures and tables -> figures.smokescreen/, results.smokescreen/.
 smokescreen: false
-smokescreen_n_subjects: 3
+smokescreen_n_subjects: 40
 # One entry per analysis; each gets ROI power and ROI synchrony.
 # Synchrony: ciPLV (lag-insensitive phase) for alpha, AEC-c for high gamma.
 runs:

@@ -21,11 +21,6 @@ def get_dfrow(dfrow: Sequence[Any] | NDArrayAny) -> pd.Series:
     return pd.Series({'sub': str(sub), 'exp': str(exp), 'sess': int(sess)})
 
 
-def load_pickle(path: str) -> Any:
-    with open(path, 'rb') as f:
-        return pickle.load(f)
-
-
 def save_pickle(path: str, obj: Any) -> None:
     with open(path, 'wb') as f:
         pickle.dump(obj, f)

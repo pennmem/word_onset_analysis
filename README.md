@@ -36,15 +36,22 @@ OpenNeuro lists, so the cohort grows as the release is updated.
 ## To run
 
 ```bash
-snakemake --cores 8                               # full run (config.yaml `runs`: alpha ciPLV + high-gamma AEC-c)
-snakemake --cores 4 --config smokescreen=true     # first 3 subjects, *.smokescreen outputs
-snakemake simulations --cores 4                   # validity checks -> figures/simulations/
+zsh run_project.sh --dry-run          # what would run (add --smokescreen)
+zsh run_project.sh --smokescreen      # plot stages on 40 random subjects of the existing cache -> *.smokescreen
+zsh run_project.sh                    # full run: sessions -> compute -> proposal figures -> proposal/proposal.pdf
+zsh run_project.sh --target timing    # one stage (and what it needs)
+snakemake paper / simulations --cores 4   # paper figures (on hold) / validity checks -> figures/simulations/
 # add --config longetal=true for the Long et al. 2020 replication (power only) -> *.longetal
 ```
 
+Proposal stages, in order (Snakefile; each figure's rules in plot_variance_structure.py's docstring):
+`plot_boxplots.py --measure power` (1A), `plot_variance_structure.py` (1B, 2A, 3D, S1B, noise ceilings),
+`--single` (1C), `plot_timing.py` (2B-D, 3A-C, 3E, S2, S3), `--recall` (4), `plot_variability.py` (S1A),
+then the figures are copied to `proposal/img/` and `proposal.tex` is recompiled.
+
 `prepare_sessions.py` writes the session list and per-session artifacts under
 `config.yaml paths.scratch_dir` (default `~/scratch/word_onset_analysis/scratch`,
-outside the repo; smokescreen runs use `scratch.*` folders).
+outside the repo; longetal runs use `scratch.longetal`).
 `--subjects` / `--n-subjects` restrict it. Sessions whose 100/120/150 Hz mains
 harmonics exceed 5x their neighbours are excluded (`max_line_harmonic_ratio`).
 
@@ -89,13 +96,16 @@ compute.py                  per session, one load: alpha + spectrum power (multi
                             power (Hilbert sub-bands, + per-trial envelopes), alpha ciPLV, high-gamma AEC-c
 plot_boxplots.py            power + synchrony per ROI (subject and mean +/- CI versions)
 plot_spectrum.py            t per ROI x frequency bin
-plot_timecourse.py          high-gamma d per 50 ms bin per ROI
 plot_epoch_network.py       200 ms epoch synchrony network (hubs + edges)
 plot_latency.py             high-gamma half-max latency / order of activation
-plot_anticipation.py        high-gamma response after short vs long waits (blank before the word)
+plot_anticipation.py        high-gamma response after short vs long waits (paper)
+plot_variance_structure.py  proposal: variance components, alpha vs high gamma, carry-over, single subjects, SME;
+                            every figure's event rules and power units
+plot_timing.py              proposal: waveforms, latency lags, ISI effects, ISI histogram
+plot_variability.py         proposal: electrode test-retest
+mixed_models.R              lme4 fits for the variance, single-subject and recall models
 plot_recovery.py            simulation recovery curves
 build_roi_power.py          Long et al. replication only (legacy, longetal=true)
-roi_subregion_counts.py     ROI/subregion coverage tables (standalone)
 
 fc_comparison_functions.py  connectivity estimators, ROI stats, figures, session dispatch
 helper.py                   BIDS EEG / electrode loading, resample + notch, regionalisation

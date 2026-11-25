@@ -7,15 +7,12 @@ typeset -A F=(
   fig1c_example              study/example_response.png
   fig1_power                 burke_roi_power/roi_power_word_on_sem.png
   fig2b_spectrum             burke_roi_power/power_spectrum_word_on_rois.png
-  fig3_timecourse            burke_roi_power/power_timecourse_word_on_high_gamma.png
   fig4b_latency_fine         latency/hg_latency_word_on_fine_pooled.png
   fig5_synchrony             burke_roi_synchrony/roi_synchrony_word_on_sem.png
-  fig6a_epochs               burke_roi_synchrony/roi_synchrony_epochs_word_on.png
   fig6c_epochs_alpha         burke_roi_synchrony/roi_synchrony_epochs_word_on_alpha.png
-  fig6b_epochs_fine          burke_roi_synchrony/roi_synchrony_epochs_fine_word_on.png
   fig7_recall_time           decoding/recall_auc_time_word_on.png
   fig8_reliability           reliability/reliability_word_on.png
-  fig9a_wait_times           latency/wait_times_word_on.png
+  fig9a_wait_times           timing/isi_hist.png
   fig9_anticipation          latency/hg_anticipation_word_on.png
   figS1_power_subjects       burke_roi_power/roi_power_word_on.png
   figS2_synchrony_subjects   burke_roi_synchrony/roi_synchrony_word_on.png

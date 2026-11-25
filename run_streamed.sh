@@ -42,7 +42,7 @@ for t in ${=SIM_PLOT_TAGS:-${SIM_TAGS:-real}}; do
     *) only=() ;;
   esac
   for s d in plot_boxplots . plot_spectrum burke_roi_power \
-             plot_timecourse burke_roi_power plot_epoch_network burke_roi_synchrony plot_latency latency \
+             plot_epoch_network burke_roi_synchrony plot_latency latency \
              plot_anticipation latency plot_decoding decoding plot_reliability reliability; do
     (( ${#only} )) && (( ! ${only[(Ie)$s]} )) && continue
     CML_DATA_SOURCE=local $PY $s.py $S --out-dir $F/$d   # figures from the cache

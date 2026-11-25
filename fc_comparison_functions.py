@@ -32,9 +32,9 @@ from mne_connectivity import (  # pyright: ignore[reportMissingTypeStubs]
 
 from project_paths import (
     SCRATCH_DIR as _SCRATCH_DIR,
-    MT_BANDWIDTH, COMPUTATION_METRICS, RUN_METRIC, SUBTRACT_ERP,
+    MT_BANDWIDTH, RUN_METRIC, SUBTRACT_ERP,
     REAL_DATA_BUFFER_MS,
-    TIME_BIN_MS, MT_WINDOW_MS, LONGETAL,  # noqa: F401 (re-exported to the build scripts)
+    TIME_BIN_MS, MT_WINDOW_MS, LONGETAL, get_default,  # noqa: F401 (re-exported to the build scripts)
 )
 
 root_dir: str = str(_SCRATCH_DIR)
@@ -396,19 +396,6 @@ def compute_prepost_separate(
     return out
 
 
-def compute_session_fc(
-    dfrow: pd.Series, beh: str, band: str, metrics: Sequence[str],
-    overlap_mask: NDArrayAny | None = None, simulation_tag: str | None = None,
-) -> dict[str, dict[str, NDArrayAny]] | None:
-    """{metric: {baseline, succ, diff}} for one session, or None without events."""
-    events = load_events(dfrow, beh)
-    if events is None:
-        return None
-    fmin, fmax = bands[band]
-    return compute_prepost_separate(dfrow, beh, events, metrics, fmin, fmax, overlap_mask,
-                                    REAL_DATA_BUFFER_MS, simulation_tag=simulation_tag)
-
-
 def stars(q):
     """Significance stars from a (corrected) p-value."""
     if not np.isfinite(q): return ""
@@ -432,7 +419,6 @@ BEH_CONTRASTS: dict[str, dict[str, str]] = {
                 "lo_label": "Word Off", "hi_label": "Word On", "delta_label": "Δ word",
                 "title": "Word Presentation vs Pre-Word"},
 }
-PHASE_METRICS: tuple[str, ...] = tuple(COMPUTATION_METRICS)
 
 
 def contrast(beh: str) -> dict[str, str]:
@@ -823,11 +809,12 @@ def band_label(band: str) -> str:
 
 
 def table_path(path: str) -> str:
-    """Where a table (CSV) belongs: the same path with its first 'figures' directory replaced
+    """Where a table (CSV) belongs: the same path with its first 'figures' directory (or 'figures.<suffix>') replaced
     by 'results', so figures/ holds figures only; the directory is created."""
     parts = list(Path(path).parts)
-    if "figures" in parts:
-        parts[parts.index("figures")] = "results"
+    i = next((k for k, part in enumerate(parts) if part.split(".")[0] == "figures"), None)   # figures.smokescreen too
+    if i is not None:
+        parts[i] = parts[i].replace("figures", "results", 1)
     out = Path(*parts)
     out.parent.mkdir(parents=True, exist_ok=True)
     return str(out)
@@ -1056,8 +1043,12 @@ def load_sess_list(
 def session_files(d: Any, suffix: str, n_sessions: int | None = None) -> list[Path]:
     """Sorted per-session files `<ftag><suffix>` in d, for sessions INCLUDED in
     root_dir's sess_list_df.json only, so stale files of excluded sessions are
-    never aggregated."""
+    never aggregated. Smokescreen (WOA_SMOKESCREEN): smokescreen_n_subjects random subjects (seed 0)."""
     included = pd.read_json(join(root_dir, "sess_list_df.json")).query("include == True")
+    if os.environ.get("WOA_SMOKESCREEN"):
+        subjects = sorted(included["sub"].unique())
+        n = min(int(get_default("smokescreen_n_subjects")), len(subjects))
+        included = included[included["sub"].isin(np.random.default_rng(0).choice(subjects, n, replace=False))]
     keep = {f"{r.sub}_{r.exp}_{r.sess}" for r in included.itertuples()}
     return [f for f in sorted(Path(d).glob(f"*{suffix}")) if f.name[:-len(suffix)] in keep][:n_sessions]
 
